@@ -5,7 +5,7 @@ const crypto = require("crypto");
 const sqlite3 = require("sqlite3").verbose();
 
 const webRoot = __dirname;
-const dataRoot = path.join(webRoot, "data");
+const dataRoot = process.env.VERCEL ? "/tmp" : path.join(webRoot, "data");
 const databasePath = path.join(dataRoot, "govfake.sqlite");
 const port = Number(process.env.PORT || 3000);
 const sessionMaxAgeMs = 7 * 24 * 60 * 60 * 1000;
@@ -798,7 +798,7 @@ async function serveStatic(request, response, url) {
   });
 }
 
-const server = http.createServer((request, response) => {
+function requestHandler(request, response) {
   const url = new URL(request.url, `http://localhost:${port}`);
 
   if (url.pathname.startsWith("/api/")) {
@@ -811,8 +811,12 @@ const server = http.createServer((request, response) => {
   serveStatic(request, response, url).catch((error) => {
     sendJson(response, 500, { error: error.message });
   });
-});
+}
 
-server.listen(port, () => {
-  console.log(`Website running at http://localhost:${port}`);
-});
+if (require.main === module) {
+  http.createServer(requestHandler).listen(port, () => {
+    console.log(`Website running at http://localhost:${port}`);
+  });
+}
+
+module.exports = requestHandler;
