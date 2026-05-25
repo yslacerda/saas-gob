@@ -2,12 +2,12 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const sqlite3 = require("sqlite3").verbose();
+const { Pool } = require("pg");
 
 const webRoot = __dirname;
-const dataRoot = process.env.VERCEL ? "/tmp" : path.join(webRoot, "data");
-const databasePath = path.join(dataRoot, "govfake.sqlite");
+loadLocalEnv(path.join(webRoot, ".env.local"));
 const port = Number(process.env.PORT || 3000);
+const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
 const sessionMaxAgeMs = 7 * 24 * 60 * 60 * 1000;
 const maxJsonBodyLength = 25_000_000;
 const allowBootstrapAdmin = process.env.ALLOW_BOOTSTRAP_ADMIN === "true";
@@ -29,6 +29,21 @@ const acceptedPhotoMimeTypes = new Set([
   "image/bmp"
 ]);
 
+function loadLocalEnv(filePath) {
+  if (process.env.VERCEL || !fs.existsSync(filePath)) return;
+  const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const separator = trimmed.indexOf("=");
+    if (separator === -1) continue;
+    const key = trimmed.slice(0, separator).trim();
+    const rawValue = trimmed.slice(separator + 1).trim();
+    if (!key || process.env[key] !== undefined) continue;
+    process.env[key] = rawValue.replace(/^["']|["']$/g, "");
+  }
+}
+
 const types = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -45,48 +60,48 @@ const types = {
   ".json": "application/json; charset=utf-8"
 };
 
-fs.mkdirSync(dataRoot, { recursive: true });
-
-const db = new sqlite3.Database(databasePath);
-
-function run(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function onRun(error) {
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve(this);
-    });
-  });
+if (!databaseUrl) {
+  throw new Error("DATABASE_URL precisa apontar para o Postgres/Supabase.");
 }
 
-function get(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (error, row) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve(row);
-    });
-  });
+const pool = new Pool({
+  connectionString: normalizePostgresUrl(databaseUrl),
+  max: Number(process.env.PG_POOL_MAX || 3),
+  ssl: process.env.PGSSLMODE === "disable" ? false : { rejectUnauthorized: false }
+});
+
+function normalizePostgresUrl(value) {
+  try {
+    const url = new URL(value);
+    url.searchParams.delete("sslmode");
+    return url.toString();
+  } catch {
+    return value;
+  }
 }
 
-function all(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (error, rows) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve(rows);
-    });
-  });
+function postgresQuery(sql, params = []) {
+  let index = 0;
+  const text = sql.replace(/\?/g, () => `$${++index}`);
+  return pool.query(text, params);
+}
+
+async function run(sql, params = []) {
+  const result = await postgresQuery(sql, params);
+  return { changes: result.rowCount };
+}
+
+async function get(sql, params = []) {
+  const result = await postgresQuery(sql, params);
+  return result.rows[0] || null;
+}
+
+async function all(sql, params = []) {
+  const result = await postgresQuery(sql, params);
+  return result.rows;
 }
 
 const ready = (async () => {
-  await run("PRAGMA foreign_keys = ON");
   await run(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -98,31 +113,9 @@ const ready = (async () => {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `);
-  const userColumns = await all("PRAGMA table_info(users)");
-  if (!userColumns.some((column) => column.name === "role")) {
-    await run("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'");
-  }
-  if (!userColumns.some((column) => column.name === "username")) {
-    await run("ALTER TABLE users ADD COLUMN username TEXT");
-    const hasEmail = userColumns.some((column) => column.name === "email");
-    const rows = await all(`SELECT id, name${hasEmail ? ", email" : ""} FROM users ORDER BY created_at ASC`);
-    for (const row of rows) {
-      const emailPrefix = row.email ? row.email.split("@")[0] : "";
-      const base = normalizeUsername(row.name || emailPrefix || "usuario") || `usuario-${row.id.slice(0, 8)}`;
-      let username = base;
-      let suffix = 1;
-      while (await get("SELECT id FROM users WHERE username = ? AND id <> ?", [username, row.id])) {
-        suffix += 1;
-        username = `${base}${suffix}`;
-      }
-      await run("UPDATE users SET username = ? WHERE id = ?", [username, row.id]);
-    }
-    await run("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)");
-  }
-  const refreshedUserColumns = await all("PRAGMA table_info(users)");
-  if (refreshedUserColumns.some((column) => column.name === "email")) {
-    await migrateUsersWithoutEmail();
-  }
+  await run("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user'");
+  await run("ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT");
+  await run("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('user', 'admin'))").catch(ignoreDuplicateObject);
   await run("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)");
   await run(`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -134,10 +127,7 @@ const ready = (async () => {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
-  const sessionColumns = await all("PRAGMA table_info(sessions)");
-  if (!sessionColumns.some((column) => column.name === "csrf_token")) {
-    await run("ALTER TABLE sessions ADD COLUMN csrf_token TEXT");
-  }
+  await run("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS csrf_token TEXT");
   await run(`
     CREATE TABLE IF NOT EXISTS identities (
       id TEXT PRIMARY KEY,
@@ -152,14 +142,12 @@ const ready = (async () => {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
-  const identityColumns = await all("PRAGMA table_info(identities)");
-  if (!identityColumns.some((column) => column.name === "photo_data_url")) {
-    await run("ALTER TABLE identities ADD COLUMN photo_data_url TEXT");
-  }
-  if (!identityColumns.some((column) => column.name === "photo_slides_json")) {
-    await run("ALTER TABLE identities ADD COLUMN photo_slides_json TEXT");
-  }
+  await run("ALTER TABLE identities ADD COLUMN IF NOT EXISTS photo_data_url TEXT");
+  await run("ALTER TABLE identities ADD COLUMN IF NOT EXISTS photo_slides_json TEXT");
   await run("CREATE INDEX IF NOT EXISTS idx_identities_user_id ON identities(user_id)");
+  await run("ALTER TABLE users ENABLE ROW LEVEL SECURITY");
+  await run("ALTER TABLE sessions ENABLE ROW LEVEL SECURITY");
+  await run("ALTER TABLE identities ENABLE ROW LEVEL SECURITY");
   await removeAutomaticExampleIdentities();
   const admin = await get("SELECT id FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1");
   if (!admin && allowBootstrapAdmin) {
@@ -170,42 +158,9 @@ const ready = (async () => {
   }
 })();
 
-async function migrateUsersWithoutEmail() {
-  await run("PRAGMA foreign_keys = OFF");
-  try {
-    await run("BEGIN TRANSACTION");
-    await run(`
-      CREATE TABLE users_next (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        username TEXT NOT NULL UNIQUE,
-        password_salt TEXT NOT NULL,
-        password_hash TEXT NOT NULL,
-        role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    await run(`
-      INSERT INTO users_next (id, name, username, password_salt, password_hash, role, created_at)
-      SELECT
-        id,
-        COALESCE(NULLIF(name, ''), username),
-        username,
-        password_salt,
-        password_hash,
-        COALESCE(role, 'user'),
-        created_at
-      FROM users
-    `);
-    await run("DROP TABLE users");
-    await run("ALTER TABLE users_next RENAME TO users");
-    await run("COMMIT");
-  } catch (error) {
-    await run("ROLLBACK").catch(() => {});
-    throw error;
-  } finally {
-    await run("PRAGMA foreign_keys = ON");
-  }
+function ignoreDuplicateObject(error) {
+  if (error && error.code === "42710") return;
+  throw error;
 }
 
 async function removeAutomaticExampleIdentities() {

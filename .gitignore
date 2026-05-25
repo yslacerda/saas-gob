@@ -6,6 +6,8 @@ website/data/*.sqlite-*
 
 .env
 .env.*
+!.env.example
+!website/.env.example
 .vercel/
 *.log
 npm-debug.log*
