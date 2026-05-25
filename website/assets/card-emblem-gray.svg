@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="260" height="260" viewBox="0 0 260 260">
+  <defs>
+    <style>
+      .outline{fill:none;stroke:#4f9ca6;stroke-linecap:round;stroke-linejoin:round}
+      .dark{fill:#4f9ca6}
+      .mid{fill:#72b7c0}
+      .light{fill:#a4d6dc}
+    </style>
+  </defs>
+  <g opacity=".68">
+    <path class="light" d="M130 3l13 36 30-25-7 39 38-11-25 31 40 5-35 20 35 20-40 5 25 31-38-11 7 39-30-25-13 36-13-36-30 25 7-39-38 11 25-31-40-5 35-20-35-20 40-5-25-31 38 11-7-39 30 25z"/>
+    <path class="outline" stroke-width="2" d="M130 3l13 36 30-25-7 39 38-11-25 31 40 5-35 20 35 20-40 5 25 31-38-11 7 39-30-25-13 36-13-36-30 25 7-39-38 11 25-31-40-5 35-20-35-20 40-5-25-31 38 11-7-39 30 25z"/>
+    <path class="mid" d="M130 31l24 66 70 .7-56.2 40.5 20.8 67.8L130 166.5 71.4 206l20.8-67.8L36 97.7l70-.7z"/>
+    <path class="outline" stroke-width="4" d="M130 31l24 66 70 .7-56.2 40.5 20.8 67.8L130 166.5 71.4 206l20.8-67.8L36 97.7l70-.7z"/>
+    <path class="light" d="M130 48l18.8 52.2 55.5 .6-44.7 32 16.6 53.8L130 155.2 83.8 186.6l16.6-53.8-44.7-32 55.5-.6z"/>
+    <path class="outline" stroke-width="2.4" d="M130 48l18.8 52.2 55.5 .6-44.7 32 16.6 53.8L130 155.2 83.8 186.6l16.6-53.8-44.7-32 55.5-.6z"/>
+    <circle class="light" cx="130" cy="111" r="48"/>
+    <circle class="outline" cx="130" cy="111" r="48" stroke-width="4"/>
+    <circle class="outline" cx="130" cy="111" r="38" stroke-width="2"/>
+    <circle class="outline" cx="130" cy="111" r="27" stroke-width="1.8"/>
+    <path class="dark" d="M130 74l3.2 8.3 8.8.5-6.8 5.6 2.2 8.6-7.4-4.8-7.4 4.8 2.2-8.6-6.8-5.6 8.8-.5z"/>
+    <path class="dark" d="M111 92l2.7 6.9 7.3.4-5.6 4.7 1.8 7.2-6.2-4-6.2 4 1.8-7.2-5.6-4.7 7.3-.4z"/>
+    <path class="dark" d="M149 92l2.7 6.9 7.3.4-5.6 4.7 1.8 7.2-6.2-4-6.2 4 1.8-7.2-5.6-4.7 7.3-.4z"/>
+    <path class="dark" d="M119 124l2.7 6.9 7.3.4-5.6 4.7 1.8 7.2-6.2-4-6.2 4 1.8-7.2-5.6-4.7 7.3-.4z"/>
+    <path class="dark" d="M142 124l2.7 6.9 7.3.4-5.6 4.7 1.8 7.2-6.2-4-6.2 4 1.8-7.2-5.6-4.7 7.3-.4z"/>
+    <path class="outline" stroke-width="4" d="M41 172c36 42 88 58 158 35"/>
+    <path class="outline" stroke-width="4" d="M219 172c-36 42-88 58-158 35"/>
+    <path class="outline" stroke-width="3" d="M69 192c36 19 85 19 122 0"/>
+    <path class="outline" stroke-width="2.2" d="M84 208c29 11 63 11 92 0"/>
+    <path class="mid" d="M108 193h44l-8 45h-28z"/>
+    <path class="outline" stroke-width="2" d="M108 193h44l-8 45h-28z"/>
+    <path class="outline" stroke-width="5" d="M47 153l-35-31 45 15-27-37 40 25-14-43 32 34"/>
+    <path class="outline" stroke-width="5" d="M213 153l35-31-45 15 27-37-40 25 14-43-32 34"/>
+    <path class="outline" stroke-width="2.2" d="M73 40c20 17 35 38 46 63"/>
+    <path class="outline" stroke-width="2.2" d="M187 40c-20 17-35 38-46 63"/>
+    <path class="outline" stroke-width="2" d="M81 55l-20-19 27 7-8-25 22 18"/>
+    <path class="outline" stroke-width="2" d="M179 55l20-19-27 7 8-25-22 18"/>
+    <path class="outline" stroke-width="2" d="M66 70l-24-14 28 1-14-22 24 13"/>
+    <path class="outline" stroke-width="2" d="M194 70l24-14-28 1 14-22-24 13"/>
+    <path class="mid" d="M44 197c28 9 57 15 86 15s58-6 86-15l-11 20c-51 20-99 20-150 0z"/>
+    <path class="outline" stroke-width="2" d="M44 197c28 9 57 15 86 15s58-6 86-15l-11 20c-51 20-99 20-150 0z"/>
+    <path class="outline" stroke-width="1.4" d="M73 206c36 10 78 10 114 0"/>
+  </g>
+</svg>
