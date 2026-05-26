@@ -649,6 +649,7 @@ function setupReferenceIdentityView(slides = documentPages) {
   stage.addEventListener("touchstart", handleReferenceTouchStart, { passive: false });
   stage.addEventListener("touchmove", handleReferenceTouchMove, { passive: false });
   stage.addEventListener("touchend", handleReferenceTouchEnd);
+  stage.addEventListener("touchcancel", handleReferenceTouchCancel);
   stage.addEventListener("wheel", handleReferenceWheel, { passive: false });
 }
 
@@ -705,10 +706,11 @@ function toggleReferenceZoom() {
 
 function changeReferencePage(nextIndex) {
   if (referenceView.mode !== "doc") return;
-  if (nextIndex < 0 || nextIndex >= referenceView.documentPages.length || nextIndex === referenceView.pageIndex) return;
+  if (nextIndex < 0 || nextIndex >= referenceView.documentPages.length || nextIndex === referenceView.pageIndex) return false;
   referenceView.pageIndex = nextIndex;
   resetReferenceZoom();
   renderReferenceDocumentPage();
+  return true;
 }
 
 function resetReferenceZoom() {
@@ -809,6 +811,7 @@ function handleReferenceTouchStart(event) {
   referenceView.touchStartY = touch.clientY;
   referenceView.panStartX = referenceView.offsetX;
   referenceView.panStartY = referenceView.offsetY;
+  referenceView.swipeHandled = false;
 }
 
 function handleReferenceTouchMove(event) {
@@ -831,6 +834,19 @@ function handleReferenceTouchMove(event) {
     referenceView.offsetX = currentLocalX - contentX * nextZoom;
     referenceView.offsetY = currentLocalY - contentY * nextZoom;
     applyReferenceZoom();
+    return;
+  }
+
+  if (event.touches.length === 1 && referenceView.zoom <= 1.01 && !referenceView.swipeHandled) {
+    const touch = event.touches[0];
+    const dx = touch.clientX - referenceView.touchStartX;
+    const dy = touch.clientY - referenceView.touchStartY;
+    if (Math.abs(dx) > 24 && Math.abs(dx) > Math.abs(dy) * 1.15) {
+      event.preventDefault();
+      if (Math.abs(dx) > 54) {
+        referenceView.swipeHandled = changeReferencePage(referenceView.pageIndex + (dx < 0 ? 1 : -1));
+      }
+    }
     return;
   }
 
@@ -857,12 +873,21 @@ function handleReferenceTouchEnd(event) {
     return;
   }
   if (event.touches.length > 0 || referenceView.zoom > 1.01) return;
+  if (referenceView.swipeHandled) {
+    referenceView.swipeHandled = false;
+    return;
+  }
 
   const touch = event.changedTouches[0];
   const dx = touch.clientX - referenceView.touchStartX;
   const dy = touch.clientY - referenceView.touchStartY;
   if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
   changeReferencePage(referenceView.pageIndex + (dx < 0 ? 1 : -1));
+}
+
+function handleReferenceTouchCancel() {
+  referenceView.pinchStartDistance = 0;
+  referenceView.swipeHandled = false;
 }
 
 function handleReferenceWheel(event) {
