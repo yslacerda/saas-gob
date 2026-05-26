@@ -1597,6 +1597,40 @@ select:focus {
   }
 }
 
+@media (hover: none) and (pointer: coarse), (max-width: 960px) and (max-height: 640px) {
+  html,
+  body,
+  .stage,
+  #app {
+    width: 100%;
+    min-width: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  .fake-id-page {
+    width: 100vw;
+    width: 100dvw;
+    height: 100dvh;
+    min-height: 100dvh;
+    place-items: stretch;
+    padding: 0;
+    overflow: hidden;
+    background: #fff;
+  }
+
+  .reference-phone,
+  .identity-phone {
+    width: 100vw;
+    width: 100dvw;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    aspect-ratio: auto;
+    box-shadow: none;
+  }
+}
+
 @media (max-width: 640px), (max-width: 900px) and (max-height: 640px) {
   html,
   body,
