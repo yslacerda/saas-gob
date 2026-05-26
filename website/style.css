@@ -955,12 +955,17 @@ select:focus {
 }
 
 .fake-id-page {
+  width: 100vw;
+  width: 100dvw;
+  height: 100vh;
+  height: 100dvh;
   min-height: 100vh;
   min-height: 100dvh;
   display: grid;
-  place-items: center;
-  padding: 24px;
-  background: #f3f6fa;
+  place-items: stretch;
+  padding: 0;
+  overflow: hidden;
+  background: #fff;
 }
 
 .wallet-phone {
@@ -1001,12 +1006,16 @@ select:focus {
 
 .identity-phone {
   position: relative;
-  width: min(100vw - 24px, 333px);
-  aspect-ratio: 333 / 666;
-  max-height: calc(100vh - 48px);
+  width: 100vw;
+  width: 100dvw;
+  height: 100vh;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  aspect-ratio: auto;
   overflow: hidden;
   background: #fff;
-  box-shadow: 0 22px 55px rgba(15, 23, 42, 0.24);
+  box-shadow: none;
 }
 
 .wallet-shell {
@@ -1441,12 +1450,16 @@ select:focus {
 
 .reference-phone {
   position: relative;
-  width: min(100vw - 24px, 393px);
-  aspect-ratio: 1320 / 2868;
-  max-height: calc(100vh - 48px);
+  width: 100vw;
+  width: 100dvw;
+  height: 100vh;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  aspect-ratio: auto;
   overflow: hidden;
   background: #fff;
-  box-shadow: 0 22px 55px rgba(15, 23, 42, 0.24);
+  box-shadow: none;
 }
 
 .reference-phone::after {
