@@ -253,6 +253,39 @@ function identityCard(identity) {
   `;
 }
 
+function adminUserList() {
+  if (!isAdmin()) return "";
+
+  return `
+    <section class="admin-users">
+      <div class="panel-heading compact">
+        <div>
+          <span class="eyebrow">Usuarios</span>
+          <h2>Gerenciar usuarios</h2>
+        </div>
+        <strong>${state.users.length}</strong>
+      </div>
+      <div class="user-list">
+        ${state.users.length
+          ? state.users.map((user) => {
+            const identityCount = state.identities.filter((identity) => identity.userId === user.id).length;
+            const isCurrentUser = user.id === state.user.id;
+            return `
+              <article class="user-card">
+                <div>
+                  <strong>@${escapeHtml(user.username || user.name)}</strong>
+                  <small>${escapeHtml(user.role || "user")} - ${identityCount} identidade${identityCount === 1 ? "" : "s"}</small>
+                </div>
+                <button class="danger-btn" type="button" data-remove-user="${escapeHtml(user.id)}" ${isCurrentUser ? "disabled" : ""}>Remover</button>
+              </article>
+            `;
+          }).join("")
+          : `<div class="empty-state compact">Nenhum usuario cadastrado.</div>`}
+      </div>
+    </section>
+  `;
+}
+
 async function renderDashboardPage() {
   const hasUser = await ensureUser();
   if (!hasUser) {
@@ -296,6 +329,7 @@ async function renderDashboardPage() {
         </section>
 
         <aside class="panel create-panel">
+          ${adminUserList()}
           <span class="eyebrow">Nova identidade</span>
           <h2>Criar identidade</h2>
           <form id="identityForm" class="identity-form">
@@ -1837,7 +1871,18 @@ function bindEvents() {
 
   document.querySelectorAll("[data-remove-identity]").forEach((button) => {
     button.addEventListener("click", async () => {
+      if (!window.confirm("Remover esta identidade?")) return;
       await api(`/api/identities/${encodeURIComponent(button.dataset.removeIdentity)}`, {
+        method: "DELETE"
+      });
+      renderDashboardPage();
+    });
+  });
+
+  document.querySelectorAll("[data-remove-user]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (!window.confirm("Remover este usuario e todas as identidades dele?")) return;
+      await api(`/api/users/${encodeURIComponent(button.dataset.removeUser)}`, {
         method: "DELETE"
       });
       renderDashboardPage();

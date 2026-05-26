@@ -521,6 +521,28 @@ async function handleApi(request, response, url) {
     return;
   }
 
+  const userMatch = /^\/api\/users\/([^/]+)$/.exec(url.pathname);
+  if (userMatch && request.method === "DELETE") {
+    const user = await requireUser(request, response);
+    if (!user) return;
+    if (!requireCsrf(request, response, user)) return;
+    if (!requireAdmin(user, response)) return;
+    const targetUserId = userMatch[1];
+    if (!requireUuid(targetUserId, response, "Usuario")) return;
+    if (targetUserId === user.id) {
+      sendJson(response, 400, { error: "O admin nao pode remover a propria conta." });
+      return;
+    }
+
+    const result = await run("DELETE FROM users WHERE id = ?", [targetUserId]);
+    if (result.changes === 0) {
+      sendJson(response, 404, { error: "Usuario nao encontrado." });
+      return;
+    }
+    sendJson(response, 200, { ok: true, deleted: result.changes });
+    return;
+  }
+
   if (url.pathname === "/api/identities" && request.method === "GET") {
     const user = await requireUser(request, response);
     if (!user) return;

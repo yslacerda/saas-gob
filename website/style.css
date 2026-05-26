@@ -591,6 +591,11 @@ select:focus {
   margin-bottom: 16px;
 }
 
+.panel-heading.compact {
+  align-items: center;
+  margin-bottom: 12px;
+}
+
 .panel-heading h2,
 .create-panel h2 {
   margin: 6px 0 0;
@@ -744,6 +749,61 @@ select:focus {
 
 .create-panel {
   align-self: start;
+}
+
+.admin-users {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 22px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.user-list {
+  display: grid;
+  gap: 10px;
+}
+
+.user-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #dbe7f3;
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.user-card strong,
+.user-card small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-card strong {
+  color: var(--gov-blue-dark);
+  font-size: 14px;
+}
+
+.user-card small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.user-card .danger-btn {
+  width: auto;
+  min-height: 38px;
+  padding: 0 13px;
+  font-size: 12px;
+}
+
+.empty-state.compact {
+  min-height: 96px;
 }
 
 .identity-form {
@@ -1860,6 +1920,15 @@ select:focus {
   .identity-actions {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .user-card {
+    grid-template-columns: 1fr;
+  }
+
+  .user-card .danger-btn {
+    width: 100%;
+    min-height: 44px;
   }
 
   .crop-dialog {
