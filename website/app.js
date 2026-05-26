@@ -415,6 +415,7 @@ async function renderDashboardPage() {
                 <button type="button" data-crop-mode="sticker7">Numero 7</button>
                 <button type="button" data-crop-mode="sticker0">Numero 0</button>
               </div>
+              <button class="secondary-btn undo-brush-btn" type="button" id="undoBrushStroke" disabled>Desfazer</button>
               <label>
                 <span>Tamanho da borracha</span>
                 <input id="eraserSize" type="range" min="1" max="120" step="1" value="18" />
@@ -862,6 +863,9 @@ function loadImage(src) {
 }
 
 function resetCropState() {
+  if (documentCrop.current && documentCrop.current.renderFrame) {
+    cancelAnimationFrame(documentCrop.current.renderFrame);
+  }
   documentCrop.current = null;
 }
 
@@ -882,6 +886,7 @@ async function openCropper(stepKey, file, statusElement = null) {
   const step = documentPhotoSteps.find((item) => item.key === stepKey);
   const isFront = stepKey === "front";
   const eraseCanvas = isFront ? document.createElement("canvas") : null;
+  const eraseFillCanvas = isFront ? document.createElement("canvas") : null;
   const paintCanvas = isFront ? document.createElement("canvas") : null;
   const templateImages = isFront
     ? {
@@ -894,6 +899,10 @@ async function openCropper(stepKey, file, statusElement = null) {
     eraseCanvas.width = image.naturalWidth;
     eraseCanvas.height = image.naturalHeight;
   }
+  if (eraseFillCanvas) {
+    eraseFillCanvas.width = image.naturalWidth;
+    eraseFillCanvas.height = image.naturalHeight;
+  }
   if (paintCanvas) {
     paintCanvas.width = image.naturalWidth;
     paintCanvas.height = image.naturalHeight;
@@ -903,6 +912,8 @@ async function openCropper(stepKey, file, statusElement = null) {
     image,
     templateImages,
     eraseCanvas,
+    eraseFillCanvas,
+    eraseFillDirty: true,
     paintCanvas,
     mode: "move",
     eraserSize: 18,
@@ -915,10 +926,13 @@ async function openCropper(stepKey, file, statusElement = null) {
     dragStart: null,
     eraseStart: false,
     pencilStart: false,
+    brushLastPoint: null,
+    brushUndoSnapshot: null,
     stickerDragStart: null,
     activePointers: new Map(),
     pinchStartDistance: 0,
     pinchStartZoom: 1,
+    renderFrame: 0,
     statusElement
   };
 
@@ -951,7 +965,20 @@ function drawCropCanvas() {
   const canvas = document.querySelector("#cropCanvas");
   if (!crop || !canvas) return;
 
+  crop.renderFrame = 0;
   drawCropToCanvas(canvas, true);
+}
+
+function requestCropCanvasDraw() {
+  const crop = documentCrop.current;
+  if (!crop) return;
+  if (crop.renderFrame) return;
+
+  crop.renderFrame = requestAnimationFrame(() => {
+    if (documentCrop.current === crop) {
+      drawCropCanvas();
+    }
+  });
 }
 
 function getCropTransform(crop, width, height) {
@@ -1047,15 +1074,21 @@ function drawImageSticker(context, crop, includePreviewHelpers) {
 }
 
 function drawMaskedFill(context, maskCanvas, color, x, y) {
-  const fillCanvas = document.createElement("canvas");
-  fillCanvas.width = maskCanvas.width;
-  fillCanvas.height = maskCanvas.height;
+  const crop = documentCrop.current;
+  const fillCanvas = crop && crop.eraseFillCanvas;
+  if (!fillCanvas) return;
 
-  const fillContext = fillCanvas.getContext("2d");
-  fillContext.fillStyle = color;
-  fillContext.fillRect(0, 0, fillCanvas.width, fillCanvas.height);
-  fillContext.globalCompositeOperation = "destination-in";
-  fillContext.drawImage(maskCanvas, 0, 0);
+  if (crop.eraseFillDirty) {
+    const fillContext = fillCanvas.getContext("2d");
+    fillContext.globalCompositeOperation = "source-over";
+    fillContext.clearRect(0, 0, fillCanvas.width, fillCanvas.height);
+    fillContext.fillStyle = color;
+    fillContext.fillRect(0, 0, fillCanvas.width, fillCanvas.height);
+    fillContext.globalCompositeOperation = "destination-in";
+    fillContext.drawImage(maskCanvas, 0, 0);
+    fillContext.globalCompositeOperation = "source-over";
+    crop.eraseFillDirty = false;
+  }
 
   context.drawImage(fillCanvas, x, y);
 }
@@ -1078,6 +1111,7 @@ function resetCropPointerActions(crop) {
   crop.dragStart = null;
   crop.eraseStart = false;
   crop.pencilStart = false;
+  crop.brushLastPoint = null;
   crop.stickerDragStart = null;
 }
 
@@ -1151,6 +1185,7 @@ function bindCropperEvents() {
   canvas.addEventListener("pointerdown", (event) => {
     const crop = documentCrop.current;
     if (!crop) return;
+    event.preventDefault();
     canvas.setPointerCapture(event.pointerId);
     crop.activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
@@ -1163,13 +1198,17 @@ function bindCropperEvents() {
 
     if (crop.stepKey === "front" && crop.mode === "erase") {
       crop.eraseStart = true;
-      eraseAtCanvasPoint(event);
+      crop.brushLastPoint = null;
+      saveBrushUndoSnapshot("erase");
+      applyBrushFromPointerEvent(event, "erase");
       return;
     }
 
     if (crop.stepKey === "front" && crop.mode === "pencil") {
       crop.pencilStart = true;
-      paintAtCanvasPoint(event);
+      crop.brushLastPoint = null;
+      saveBrushUndoSnapshot("pencil");
+      applyBrushFromPointerEvent(event, "pencil");
       return;
     }
 
@@ -1199,6 +1238,7 @@ function bindCropperEvents() {
   canvas.addEventListener("pointermove", (event) => {
     const crop = documentCrop.current;
     if (!crop) return;
+    event.preventDefault();
     if (crop.activePointers && crop.activePointers.has(event.pointerId)) {
       crop.activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     }
@@ -1209,12 +1249,12 @@ function bindCropperEvents() {
     }
 
     if (crop.eraseStart) {
-      eraseAtCanvasPoint(event);
+      applyBrushFromPointerEvent(event, "erase");
       return;
     }
 
     if (crop.pencilStart) {
-      paintAtCanvasPoint(event);
+      applyBrushFromPointerEvent(event, "pencil");
       return;
     }
 
@@ -1277,6 +1317,7 @@ function bindCropperEvents() {
   });
   document.querySelector("#addNumberSticker")?.addEventListener("click", addNumberSticker);
   document.querySelector("#addNumberZeroSticker")?.addEventListener("click", addNumberZeroSticker);
+  document.querySelector("#undoBrushStroke")?.addEventListener("click", undoBrushStroke);
   document.querySelectorAll("[data-crop-mode]").forEach((button) => {
     button.addEventListener("click", () => setCropMode(button.dataset.cropMode));
   });
@@ -1287,6 +1328,7 @@ function syncFrontEditTools() {
   const tools = document.querySelector("#frontEditTools");
   const note = document.querySelector(".crop-controls .form-note");
   if (tools) tools.hidden = !(crop && crop.stepKey === "front");
+  syncBrushUndoButton();
   if (note) {
     note.textContent = crop && crop.stepKey === "front"
       ? "Use Mover para ajustar a foto. A borracha cobre pixels com a cor do documento; Lapis pinta em #e7e7c3; Numero 7 e Numero 0 permitem arrastar adesivos."
@@ -1304,17 +1346,32 @@ function setCropMode(mode) {
   drawCropCanvas();
 }
 
+function syncBrushUndoButton() {
+  const button = document.querySelector("#undoBrushStroke");
+  if (!button) return;
+  const crop = documentCrop.current;
+  button.disabled = !(crop && crop.stepKey === "front" && crop.brushUndoSnapshot);
+}
+
 function getCanvasPoint(event) {
+  return getCanvasPointFromClient(event.clientX, event.clientY);
+}
+
+function getCanvasPointFromClient(clientX, clientY) {
   const canvas = document.querySelector("#cropCanvas");
   const rect = canvas.getBoundingClientRect();
   return {
-    x: ((event.clientX - rect.left) / rect.width) * canvas.width,
-    y: ((event.clientY - rect.top) / rect.height) * canvas.height
+    x: ((clientX - rect.left) / rect.width) * canvas.width,
+    y: ((clientY - rect.top) / rect.height) * canvas.height
   };
 }
 
 function getImagePoint(event) {
   return getImagePointFromCanvasPoint(getCanvasPoint(event));
+}
+
+function getImagePointFromClient(clientX, clientY) {
+  return getImagePointFromCanvasPoint(getCanvasPointFromClient(clientX, clientY));
 }
 
 function getImagePointFromCanvasPoint(point) {
@@ -1339,19 +1396,106 @@ function getImagePointFromCanvasPoint(point) {
   };
 }
 
+function getBrushPointerEvents(event) {
+  return typeof event.getCoalescedEvents === "function"
+    ? event.getCoalescedEvents()
+    : [event];
+}
+
+function saveBrushUndoSnapshot(tool) {
+  const crop = documentCrop.current;
+  const targetCanvas = crop && (tool === "erase" ? crop.eraseCanvas : crop.paintCanvas);
+  if (!crop || !targetCanvas) return;
+
+  const context = targetCanvas.getContext("2d");
+  crop.brushUndoSnapshot = {
+    tool,
+    imageData: context.getImageData(0, 0, targetCanvas.width, targetCanvas.height)
+  };
+  syncBrushUndoButton();
+}
+
+function undoBrushStroke() {
+  const crop = documentCrop.current;
+  const snapshot = crop && crop.brushUndoSnapshot;
+  if (!crop || !snapshot) return;
+
+  const targetCanvas = snapshot.tool === "erase" ? crop.eraseCanvas : crop.paintCanvas;
+  if (!targetCanvas) return;
+
+  targetCanvas.getContext("2d").putImageData(snapshot.imageData, 0, 0);
+  if (snapshot.tool === "erase") {
+    crop.eraseFillDirty = true;
+  }
+  crop.brushUndoSnapshot = null;
+  crop.brushLastPoint = null;
+  syncBrushUndoButton();
+  drawCropCanvas();
+}
+
+function applyBrushFromPointerEvent(event, tool) {
+  const crop = documentCrop.current;
+  if (!crop) return;
+
+  for (const pointerEvent of getBrushPointerEvents(event)) {
+    const point = getImagePointFromClient(pointerEvent.clientX, pointerEvent.clientY);
+    if (!point) continue;
+    drawBrushAtImagePoint(point, tool);
+  }
+  requestCropCanvasDraw();
+}
+
+function drawBrushAtImagePoint(point, tool) {
+  const crop = documentCrop.current;
+  if (!crop) return;
+
+  const targetCanvas = tool === "erase" ? crop.eraseCanvas : crop.paintCanvas;
+  if (!targetCanvas) return;
+
+  const radius = tool === "erase" ? point.eraseRadius : point.pencilRadius;
+  const context = targetCanvas.getContext("2d");
+  const previous = crop.brushLastPoint;
+
+  context.save();
+  context.fillStyle = tool === "erase" ? "#000" : cropPencilColor;
+  context.strokeStyle = context.fillStyle;
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.lineWidth = radius * 2;
+
+  if (previous && previous.tool === tool) {
+    const distance = Math.hypot(point.x - previous.x, point.y - previous.y);
+    const steps = Math.max(1, Math.ceil(distance / Math.max(radius * 0.7, 1)));
+    context.beginPath();
+    context.moveTo(previous.x, previous.y);
+    for (let index = 1; index <= steps; index += 1) {
+      const progress = index / steps;
+      context.lineTo(
+        previous.x + (point.x - previous.x) * progress,
+        previous.y + (point.y - previous.y) * progress
+      );
+    }
+    context.stroke();
+  } else {
+    context.beginPath();
+    context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+    context.fill();
+  }
+
+  context.restore();
+  crop.brushLastPoint = { x: point.x, y: point.y, tool };
+  if (tool === "erase") {
+    crop.eraseFillDirty = true;
+  }
+}
+
 function eraseAtCanvasPoint(event) {
   const crop = documentCrop.current;
   if (!crop || !crop.eraseCanvas) return;
   const point = getImagePoint(event);
   if (!point) return;
-  const context = crop.eraseCanvas.getContext("2d");
-  context.save();
-  context.fillStyle = "#000";
-  context.beginPath();
-  context.arc(point.x, point.y, point.eraseRadius, 0, Math.PI * 2);
-  context.fill();
-  context.restore();
-  drawCropCanvas();
+  drawBrushAtImagePoint(point, "erase");
+  requestCropCanvasDraw();
 }
 
 function paintAtCanvasPoint(event) {
@@ -1359,14 +1503,8 @@ function paintAtCanvasPoint(event) {
   if (!crop || !crop.paintCanvas) return;
   const point = getImagePoint(event);
   if (!point) return;
-  const context = crop.paintCanvas.getContext("2d");
-  context.save();
-  context.fillStyle = cropPencilColor;
-  context.beginPath();
-  context.arc(point.x, point.y, point.pencilRadius, 0, Math.PI * 2);
-  context.fill();
-  context.restore();
-  drawCropCanvas();
+  drawBrushAtImagePoint(point, "pencil");
+  requestCropCanvasDraw();
 }
 
 function isPointerOnSticker(event) {
