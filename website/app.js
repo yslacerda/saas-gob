@@ -401,7 +401,7 @@ async function renderDashboardPage() {
           <div class="crop-controls">
             <label>
               <span>Zoom</span>
-              <input id="cropZoom" type="range" min="0.1" max="4" step="0.01" value="1" />
+              <input id="cropZoom" type="range" min="0.1" max="6" step="0.01" value="1" />
             </label>
             <div class="crop-actions-row">
               <button class="secondary-btn" type="button" id="cropRotateLeft">Girar esquerda</button>
@@ -939,7 +939,7 @@ async function openCropper(stepKey, file, statusElement = null) {
   if (title) title.textContent = `Ajuste: ${step ? step.label : "Imagem"}`;
   if (zoomInput) {
     zoomInput.min = "0.1";
-    zoomInput.max = "4";
+    zoomInput.max = "6";
     zoomInput.value = "1";
   }
   if (modal) {
