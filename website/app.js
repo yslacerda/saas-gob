@@ -245,6 +245,7 @@ function identityCard(identity) {
       </div>
       <div class="identity-actions">
         <button class="secondary-btn" type="button" data-open-identity="${escapeHtml(identity.id)}">Acessar</button>
+        <button class="secondary-btn" type="button" data-rename-identity="${escapeHtml(identity.id)}">Renomear</button>
         <button class="secondary-btn" type="button" data-edit-identity-photos="${escapeHtml(identity.id)}">Editar fotos</button>
         ${isAdmin() && identity.userId === state.user.id ? `<button class="secondary-btn" type="button" data-send-identity="${escapeHtml(identity.id)}">Enviar</button>` : ""}
         <button class="danger-btn" type="button" data-remove-identity="${escapeHtml(identity.id)}">Remover</button>
@@ -1854,6 +1855,25 @@ function bindEvents() {
   document.querySelectorAll("[data-open-identity]").forEach((button) => {
     button.addEventListener("click", () => {
       goTo(`/identidadefake?id=${encodeURIComponent(button.dataset.openIdentity)}`);
+    });
+  });
+
+  document.querySelectorAll("[data-rename-identity]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const identity = state.identities.find((item) => item.id === button.dataset.renameIdentity);
+      if (!identity) return;
+      const title = window.prompt("Novo titulo da identidade:", identity.title || "");
+      if (title === null) return;
+      const trimmedTitle = title.trim();
+      if (!trimmedTitle) {
+        window.alert("Informe um titulo valido.");
+        return;
+      }
+      await api(`/api/identities/${encodeURIComponent(identity.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title: trimmedTitle })
+      });
+      renderDashboardPage();
     });
   });
 

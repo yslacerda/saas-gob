@@ -666,18 +666,40 @@ async function handleApi(request, response, url) {
     const identityId = identityMatch[1];
     if (!requireUuid(identityId, response, "Identidade")) return;
     const payload = await readJsonBody(request);
-    let photoSlides;
+    const updates = [];
+    const params = [];
 
-    try {
-      photoSlides = validatePhotoSlides(payload.photoSlides);
-    } catch (error) {
-      sendJson(response, 400, { error: error.message });
+    if (Object.prototype.hasOwnProperty.call(payload, "title")) {
+      const title = String(payload.title || "").trim();
+      if (!title) {
+        sendJson(response, 400, { error: "Informe um titulo valido." });
+        return;
+      }
+      updates.push("title = ?");
+      params.push(title);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, "photoSlides")) {
+      try {
+        const photoSlides = validatePhotoSlides(payload.photoSlides);
+        updates.push("photo_slides_json = ?");
+        params.push(JSON.stringify(photoSlides));
+      } catch (error) {
+        sendJson(response, 400, { error: error.message });
+        return;
+      }
+    }
+
+    if (!updates.length) {
+      sendJson(response, 400, { error: "Nenhuma alteracao informada." });
       return;
     }
 
+    updates.push("updated_at = CURRENT_TIMESTAMP");
+    params.push(identityId);
     const result = isAdmin(user)
-      ? await run("UPDATE identities SET photo_slides_json = ? WHERE id = ?", [JSON.stringify(photoSlides), identityId])
-      : await run("UPDATE identities SET photo_slides_json = ? WHERE id = ? AND user_id = ?", [JSON.stringify(photoSlides), identityId, user.id]);
+      ? await run(`UPDATE identities SET ${updates.join(", ")} WHERE id = ?`, params)
+      : await run(`UPDATE identities SET ${updates.join(", ")} WHERE id = ? AND user_id = ?`, [...params, user.id]);
     if (result.changes === 0) {
       sendJson(response, 404, { error: "Identidade nao encontrada." });
       return;
