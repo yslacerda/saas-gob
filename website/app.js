@@ -57,8 +57,16 @@ const referenceView = {
   mode: "wallet",
   pageIndex: 0,
   zoom: 1,
+  offsetX: 0,
+  offsetY: 0,
   touchStartX: 0,
   touchStartY: 0,
+  panStartX: 0,
+  panStartY: 0,
+  pinchStartCenterX: 0,
+  pinchStartCenterY: 0,
+  pinchStartOffsetX: 0,
+  pinchStartOffsetY: 0,
   pinchStartDistance: 0,
   pinchStartZoom: 1,
   wheelSlideLock: false
@@ -649,7 +657,13 @@ function renderReferenceDocumentPage() {
 
 function toggleReferenceZoom() {
   if (referenceView.mode !== "doc") return;
-  referenceView.zoom = referenceView.zoom > 1.01 ? 1 : 2;
+  const stage = document.querySelector("#referenceStage");
+  const rect = stage ? stage.getBoundingClientRect() : { left: 0, top: 0, width: 0, height: 0 };
+  const anchor = {
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2
+  };
+  setReferenceZoomAt(anchor, referenceView.zoom > 1.01 ? 1 : 2);
   applyReferenceZoom();
 }
 
@@ -663,6 +677,8 @@ function changeReferencePage(nextIndex) {
 
 function resetReferenceZoom() {
   referenceView.zoom = 1;
+  referenceView.offsetX = 0;
+  referenceView.offsetY = 0;
   referenceView.pinchStartDistance = 0;
   applyReferenceZoom();
 }
@@ -670,7 +686,10 @@ function resetReferenceZoom() {
 function applyReferenceZoom() {
   const stage = document.querySelector("#referenceStage");
   if (!stage) return;
+  constrainReferencePan();
   stage.style.setProperty("--doc-zoom", referenceView.zoom.toFixed(3));
+  stage.style.setProperty("--doc-pan-x", `${referenceView.offsetX.toFixed(1)}px`);
+  stage.style.setProperty("--doc-pan-y", `${referenceView.offsetY.toFixed(1)}px`);
   stage.classList.toggle("is-zoomed", referenceView.zoom > 1.01);
 }
 
@@ -684,13 +703,67 @@ function touchDistance(touches) {
   return Math.hypot(dx, dy);
 }
 
+function touchCenter(touches) {
+  return {
+    x: (touches[0].clientX + touches[1].clientX) / 2,
+    y: (touches[0].clientY + touches[1].clientY) / 2
+  };
+}
+
+function setReferenceZoomAt(anchor, nextZoom) {
+  const metrics = getReferenceStageMetrics();
+  if (!metrics) return;
+  const currentZoom = referenceView.zoom || 1;
+  const zoom = clamp(nextZoom, 1, 4);
+  const localX = anchor.x - metrics.originX;
+  const localY = anchor.y - metrics.originY;
+  const contentX = (localX - referenceView.offsetX) / currentZoom;
+  const contentY = (localY - referenceView.offsetY) / currentZoom;
+  referenceView.zoom = zoom;
+  referenceView.offsetX = localX - contentX * zoom;
+  referenceView.offsetY = localY - contentY * zoom;
+  constrainReferencePan();
+}
+
+function getReferenceStageMetrics() {
+  const stage = document.querySelector("#referenceStage");
+  if (!stage) return null;
+  const zoom = referenceView.zoom || 1;
+  const rect = stage.getBoundingClientRect();
+  return {
+    originX: rect.left - referenceView.offsetX,
+    originY: rect.top - referenceView.offsetY,
+    width: rect.width / zoom,
+    height: rect.height / zoom
+  };
+}
+
+function constrainReferencePan() {
+  const metrics = getReferenceStageMetrics();
+  if (!metrics || referenceView.zoom <= 1.01) {
+    referenceView.offsetX = 0;
+    referenceView.offsetY = 0;
+    return;
+  }
+
+  const minX = -metrics.width * (referenceView.zoom - 1);
+  const minY = -metrics.height * (referenceView.zoom - 1);
+  referenceView.offsetX = clamp(referenceView.offsetX, minX, 0);
+  referenceView.offsetY = clamp(referenceView.offsetY, minY, 0);
+}
+
 function handleReferenceTouchStart(event) {
   if (referenceView.mode !== "doc") return;
 
   if (event.touches.length === 2) {
     event.preventDefault();
+    const center = touchCenter(event.touches);
     referenceView.pinchStartDistance = touchDistance(event.touches);
     referenceView.pinchStartZoom = referenceView.zoom;
+    referenceView.pinchStartCenterX = center.x;
+    referenceView.pinchStartCenterY = center.y;
+    referenceView.pinchStartOffsetX = referenceView.offsetX;
+    referenceView.pinchStartOffsetY = referenceView.offsetY;
     return;
   }
 
@@ -698,22 +771,54 @@ function handleReferenceTouchStart(event) {
   const touch = event.touches[0];
   referenceView.touchStartX = touch.clientX;
   referenceView.touchStartY = touch.clientY;
+  referenceView.panStartX = referenceView.offsetX;
+  referenceView.panStartY = referenceView.offsetY;
 }
 
 function handleReferenceTouchMove(event) {
   if (referenceView.mode !== "doc") return;
-  if (event.touches.length !== 2 || referenceView.pinchStartDistance <= 0) return;
 
-  event.preventDefault();
-  const distance = touchDistance(event.touches);
-  referenceView.zoom = clamp(referenceView.pinchStartZoom * (distance / referenceView.pinchStartDistance), 1, 4);
-  applyReferenceZoom();
+  if (event.touches.length === 2 && referenceView.pinchStartDistance > 0) {
+    event.preventDefault();
+    const metrics = getReferenceStageMetrics();
+    if (!metrics) return;
+    const center = touchCenter(event.touches);
+    const distance = touchDistance(event.touches);
+    const nextZoom = clamp(referenceView.pinchStartZoom * (distance / referenceView.pinchStartDistance), 1, 4);
+    const currentLocalX = center.x - metrics.originX;
+    const currentLocalY = center.y - metrics.originY;
+    const startLocalX = referenceView.pinchStartCenterX - metrics.originX;
+    const startLocalY = referenceView.pinchStartCenterY - metrics.originY;
+    const contentX = (startLocalX - referenceView.pinchStartOffsetX) / referenceView.pinchStartZoom;
+    const contentY = (startLocalY - referenceView.pinchStartOffsetY) / referenceView.pinchStartZoom;
+    referenceView.zoom = nextZoom;
+    referenceView.offsetX = currentLocalX - contentX * nextZoom;
+    referenceView.offsetY = currentLocalY - contentY * nextZoom;
+    applyReferenceZoom();
+    return;
+  }
+
+  if (event.touches.length === 1 && referenceView.zoom > 1.01) {
+    event.preventDefault();
+    const touch = event.touches[0];
+    referenceView.offsetX = referenceView.panStartX + touch.clientX - referenceView.touchStartX;
+    referenceView.offsetY = referenceView.panStartY + touch.clientY - referenceView.touchStartY;
+    applyReferenceZoom();
+  }
 }
 
 function handleReferenceTouchEnd(event) {
   if (referenceView.mode !== "doc") return;
   if (event.touches.length < 2) {
     referenceView.pinchStartDistance = 0;
+  }
+  if (event.touches.length === 1) {
+    const touch = event.touches[0];
+    referenceView.touchStartX = touch.clientX;
+    referenceView.touchStartY = touch.clientY;
+    referenceView.panStartX = referenceView.offsetX;
+    referenceView.panStartY = referenceView.offsetY;
+    return;
   }
   if (event.touches.length > 0 || referenceView.zoom > 1.01) return;
 

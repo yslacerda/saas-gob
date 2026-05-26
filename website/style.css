@@ -1343,8 +1343,10 @@ select:focus {
 
 .document-view .reference-stage {
   inset: 0;
-  transform: scale(var(--doc-zoom, 1));
-  transform-origin: center center;
+  transform:
+    translate3d(var(--doc-pan-x, 0px), var(--doc-pan-y, 0px), 0)
+    scale(var(--doc-zoom, 1));
+  transform-origin: 0 0;
 }
 
 .document-view .reference-image {
@@ -1595,7 +1597,17 @@ select:focus {
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 640px), (max-width: 900px) and (max-height: 640px) {
+  html,
+  body,
+  .stage,
+  #app {
+    width: 100%;
+    min-width: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
   body {
     background: #fff;
   }
@@ -1620,6 +1632,8 @@ select:focus {
     align-content: stretch;
     width: 100%;
     max-width: 100vw;
+    height: 100dvh;
+    min-height: 100dvh;
     overflow: hidden;
     background: #fff;
   }
@@ -1639,9 +1653,11 @@ select:focus {
     width: 100%;
     max-width: 100vw;
     min-width: 0;
-    min-height: 100dvh;
+    height: 100%;
+    min-height: 0;
     align-content: start;
     gap: 22px;
+    overflow: auto;
     padding: calc(22px + env(safe-area-inset-top)) 18px calc(22px + env(safe-area-inset-bottom));
     border: 0;
   }
@@ -1937,26 +1953,31 @@ select:focus {
 
   .fake-id-page {
     width: 100vw;
+    width: 100dvw;
     height: 100dvh;
     min-height: 100dvh;
-    place-items: center;
+    place-items: stretch;
     overflow: hidden;
     background: #e9edf2;
   }
 
   .reference-phone {
-    width: min(100vw, calc(100dvh * 1320 / 2868));
-    height: min(100dvh, calc(100vw * 2868 / 1320));
-    max-width: 100vw;
-    max-height: 100dvh;
+    width: 100vw;
+    width: 100dvw;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    aspect-ratio: auto;
     box-shadow: none;
   }
 
   .identity-phone {
-    width: min(100vw, calc(100dvh * 333 / 666));
-    height: min(100dvh, calc(100vw * 666 / 333));
-    max-width: 100vw;
-    max-height: 100dvh;
+    width: 100vw;
+    width: 100dvw;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    aspect-ratio: auto;
     box-shadow: none;
   }
 
