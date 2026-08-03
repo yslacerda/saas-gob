@@ -23,7 +23,7 @@ const govScreenAssets = {
 
 const cropTemplateAssets = {
   number7: "/assets/templates/template-do-numero-7.png?v=1",
-  number0: "/assets/templates/template-do-numero-0.png?v=3"
+  number0: "/assets/templates/template-do-numero-0.png?v=4"
 };
 
 const documentPages = [
