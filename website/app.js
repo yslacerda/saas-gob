@@ -10,7 +10,7 @@ const state = {
   photoEditStates: {},
   standardCropZoom: null,
   editingPhotosFor: null,
-  sendingIdentityFor: null
+  transferringIdentityFor: null
 };
 
 const govScreenAssets = {
@@ -249,7 +249,7 @@ function identityCard(identity) {
         <button class="secondary-btn" type="button" data-open-identity="${escapeHtml(identity.id)}">Acessar</button>
         <button class="secondary-btn" type="button" data-rename-identity="${escapeHtml(identity.id)}">Renomear</button>
         <button class="secondary-btn" type="button" data-edit-identity-photos="${escapeHtml(identity.id)}">Editar fotos</button>
-        ${isAdmin() && identity.userId === state.user.id ? `<button class="secondary-btn" type="button" data-send-identity="${escapeHtml(identity.id)}">Enviar</button>` : ""}
+        ${isAdmin() ? `<button class="secondary-btn" type="button" data-transfer-identity="${escapeHtml(identity.id)}">Transferir</button>` : ""}
         <button class="danger-btn" type="button" data-remove-identity="${escapeHtml(identity.id)}">Remover</button>
       </div>
     </article>
@@ -407,23 +407,23 @@ async function renderDashboardPage() {
           </div>
         </form>
       </div>
-      <div class="send-identity-modal" id="sendIdentityModal" hidden>
-        <form class="send-identity-dialog" id="sendIdentityForm">
+      <div class="transfer-identity-modal" id="transferIdentityModal" hidden>
+        <form class="transfer-identity-dialog" id="transferIdentityForm">
           <div class="crop-header">
             <div>
-              <span class="eyebrow">Enviar identidade</span>
-              <h2 id="sendIdentityTitle">Enviar</h2>
-              <p>Crie uma copia desta identidade na conta de outro usuario.</p>
+              <span class="eyebrow">Transferir identidade</span>
+              <h2 id="transferIdentityTitle">Transferir</h2>
+              <p id="transferIdentityDescription">A identidade sera movida da conta atual para o usuario selecionado.</p>
             </div>
-            <button class="crop-icon-btn" type="button" id="sendIdentityClose" aria-label="Fechar">x</button>
+            <button class="crop-icon-btn" type="button" id="transferIdentityClose" aria-label="Fechar">x</button>
           </div>
           <label>
             <span>Usuario destino</span>
-            <select name="targetUserId" id="sendIdentityTarget" required></select>
+            <select name="targetUserId" id="transferIdentityTarget" required></select>
           </label>
           <div class="crop-footer">
-            <button class="ghost-btn" type="button" id="sendIdentityCancel">Cancelar</button>
-            <button class="primary-btn" type="submit">Enviar copia</button>
+            <button class="ghost-btn" type="button" id="transferIdentityCancel">Cancelar</button>
+            <button class="primary-btn" type="submit">Confirmar transferencia</button>
           </div>
         </form>
       </div>
@@ -614,35 +614,42 @@ function closePhotoEditModal() {
   state.standardCropZoom = null;
 }
 
-function openSendIdentityModal(identityId) {
+function openTransferIdentityModal(identityId) {
   const identity = state.identities.find((item) => item.id === identityId);
-  const modal = document.querySelector("#sendIdentityModal");
-  const form = document.querySelector("#sendIdentityForm");
-  const title = document.querySelector("#sendIdentityTitle");
-  const targetSelect = document.querySelector("#sendIdentityTarget");
+  const modal = document.querySelector("#transferIdentityModal");
+  const form = document.querySelector("#transferIdentityForm");
+  const title = document.querySelector("#transferIdentityTitle");
+  const description = document.querySelector("#transferIdentityDescription");
+  const targetSelect = document.querySelector("#transferIdentityTarget");
   if (!identity || !modal || !form || !targetSelect) return;
 
   const users = state.users.filter((user) => user.id !== identity.userId);
-  state.sendingIdentityFor = identityId;
-  if (title) title.textContent = `Enviar ${identity.title}`;
+  state.transferringIdentityFor = identityId;
+  if (title) title.textContent = `Transferir ${identity.title}`;
+  if (description) {
+    const currentOwner = identity.ownerUsername || identity.ownerName || "usuario atual";
+    description.textContent = `A identidade sera movida de @${currentOwner} para o usuario selecionado.`;
+  }
   targetSelect.innerHTML = users.length
     ? users.map((user) => `
       <option value="${escapeHtml(user.id)}">@${escapeHtml(user.username || user.name)}</option>
     `).join("")
     : `<option value="">Nenhum outro usuario disponivel</option>`;
   targetSelect.disabled = users.length === 0;
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton) submitButton.disabled = users.length === 0;
   modal.hidden = false;
   setModalScrollLock(true);
   modal.querySelector("select, button")?.focus();
 }
 
-function closeSendIdentityModal() {
-  const modal = document.querySelector("#sendIdentityModal");
-  const form = document.querySelector("#sendIdentityForm");
+function closeTransferIdentityModal() {
+  const modal = document.querySelector("#transferIdentityModal");
+  const form = document.querySelector("#transferIdentityForm");
   if (modal) modal.hidden = true;
   if (form) form.reset();
   setModalScrollLock(false);
-  state.sendingIdentityFor = null;
+  state.transferringIdentityFor = null;
 }
 
 function setupReferenceIdentityView(slides = documentPages) {
@@ -1254,7 +1261,7 @@ function closeCropper(clearInput = false) {
   const crop = documentCrop.current;
   const modal = document.querySelector("#cropModal");
   if (modal) modal.hidden = true;
-  if (!document.querySelector("#photoEditModal:not([hidden]), #sendIdentityModal:not([hidden])")) {
+  if (!document.querySelector("#photoEditModal:not([hidden]), #transferIdentityModal:not([hidden])")) {
     setModalScrollLock(false);
   }
   if (clearInput && crop) {
@@ -2008,32 +2015,32 @@ function bindEvents() {
   document.querySelector("#photoEditClose")?.addEventListener("click", closePhotoEditModal);
   document.querySelector("#photoEditCancel")?.addEventListener("click", closePhotoEditModal);
 
-  const sendIdentityForm = document.querySelector("#sendIdentityForm");
-  if (sendIdentityForm) {
-    sendIdentityForm.addEventListener("submit", async (event) => {
+  const transferIdentityForm = document.querySelector("#transferIdentityForm");
+  if (transferIdentityForm) {
+    transferIdentityForm.addEventListener("submit", async (event) => {
       event.preventDefault();
-      if (!state.sendingIdentityFor) return;
-      const form = new FormData(sendIdentityForm);
+      if (!state.transferringIdentityFor) return;
+      const form = new FormData(transferIdentityForm);
       const targetUserId = String(form.get("targetUserId") || "");
-      const currentMessage = sendIdentityForm.querySelector("[data-form-error]");
+      const currentMessage = transferIdentityForm.querySelector("[data-form-error]");
       if (currentMessage) currentMessage.remove();
 
       try {
         if (!targetUserId) throw new Error("Selecione um usuario destino.");
-        await api(`/api/identities/${encodeURIComponent(state.sendingIdentityFor)}/send`, {
+        await api(`/api/identities/${encodeURIComponent(state.transferringIdentityFor)}/transfer`, {
           method: "POST",
           body: JSON.stringify({ targetUserId })
         });
-        closeSendIdentityModal();
+        closeTransferIdentityModal();
         renderDashboardPage();
       } catch (error) {
-        sendIdentityForm.insertAdjacentHTML("beforeend", `<p class="form-message" data-form-error>${escapeHtml(error.message)}</p>`);
+        transferIdentityForm.insertAdjacentHTML("beforeend", `<p class="form-message" data-form-error>${escapeHtml(error.message)}</p>`);
       }
     });
   }
 
-  document.querySelector("#sendIdentityClose")?.addEventListener("click", closeSendIdentityModal);
-  document.querySelector("#sendIdentityCancel")?.addEventListener("click", closeSendIdentityModal);
+  document.querySelector("#transferIdentityClose")?.addEventListener("click", closeTransferIdentityModal);
+  document.querySelector("#transferIdentityCancel")?.addEventListener("click", closeTransferIdentityModal);
 
   document.querySelectorAll("[data-open-identity]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -2066,9 +2073,9 @@ function bindEvents() {
     });
   });
 
-  document.querySelectorAll("[data-send-identity]").forEach((button) => {
+  document.querySelectorAll("[data-transfer-identity]").forEach((button) => {
     button.addEventListener("click", () => {
-      openSendIdentityModal(button.dataset.sendIdentity);
+      openTransferIdentityModal(button.dataset.transferIdentity);
     });
   });
 

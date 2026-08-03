@@ -651,30 +651,30 @@ async function handleApi(request, response, url) {
     return;
   }
 
-  const sendIdentityMatch = /^\/api\/identities\/([^/]+)\/send$/.exec(url.pathname);
-  if (sendIdentityMatch && request.method === "POST") {
+  const transferIdentityMatch = /^\/api\/identities\/([^/]+)\/transfer$/.exec(url.pathname);
+  if (transferIdentityMatch && request.method === "POST") {
     const user = await requireUser(request, response);
     if (!user) return;
     if (!requireCsrf(request, response, user)) return;
     if (!requireAdmin(user, response)) return;
-    const sourceIdentityId = sendIdentityMatch[1];
-    if (!requireUuid(sourceIdentityId, response, "Identidade")) return;
+    const identityId = transferIdentityMatch[1];
+    if (!requireUuid(identityId, response, "Identidade")) return;
 
     const payload = await readJsonBody(request);
     const targetUserId = String(payload.targetUserId || "");
-    if (!targetUserId || targetUserId === user.id) {
-      sendJson(response, 400, { error: "Selecione outro usuario destino." });
+    if (!targetUserId) {
+      sendJson(response, 400, { error: "Selecione o usuario destino." });
       return;
     }
     if (!requireUuid(targetUserId, response, "Usuario destino")) return;
 
-    const sourceIdentity = await get(`
-      SELECT *
-      FROM identities
-      WHERE id = ? AND user_id = ?
-    `, [sourceIdentityId, user.id]);
-    if (!sourceIdentity) {
-      sendJson(response, 404, { error: "Identidade do admin nao encontrada." });
+    const identity = await get("SELECT id, user_id FROM identities WHERE id = ?", [identityId]);
+    if (!identity) {
+      sendJson(response, 404, { error: "Identidade nao encontrada." });
+      return;
+    }
+    if (targetUserId === identity.user_id) {
+      sendJson(response, 400, { error: "A identidade ja pertence a este usuario." });
       return;
     }
 
@@ -684,18 +684,14 @@ async function handleApi(request, response, url) {
       return;
     }
 
-    const id = crypto.randomUUID();
-    await run(`
-      INSERT INTO identities (id, user_id, title, full_name, cpf, photo_slides_json, photo_edit_states_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [id, targetUserId, sourceIdentity.title, sourceIdentity.full_name, sourceIdentity.cpf, sourceIdentity.photo_slides_json, sourceIdentity.photo_edit_states_json]);
+    await run("UPDATE identities SET user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [targetUserId, identityId]);
     const row = await get(`
       SELECT identities.*, users.name AS owner_name, users.username AS owner_username
       FROM identities
       JOIN users ON users.id = identities.user_id
       WHERE identities.id = ?
-    `, [id]);
-    sendJson(response, 201, { identity: publicIdentity(row) });
+    `, [identityId]);
+    sendJson(response, 200, { identity: publicIdentity(row) });
     return;
   }
 

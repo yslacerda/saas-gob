@@ -680,7 +680,7 @@ select:focus {
 }
 
 .photo-edit-modal,
-.send-identity-modal {
+.transfer-identity-modal {
   position: fixed;
   inset: 0;
   z-index: 45;
@@ -691,12 +691,12 @@ select:focus {
 }
 
 .photo-edit-modal[hidden],
-.send-identity-modal[hidden] {
+.transfer-identity-modal[hidden] {
   display: none;
 }
 
 .photo-edit-dialog,
-.send-identity-dialog {
+.transfer-identity-dialog {
   width: min(100%, 560px);
   max-height: calc(100dvh - 36px);
   display: grid;
@@ -710,13 +710,13 @@ select:focus {
 
 .photo-edit-dialog .crop-header,
 .photo-edit-dialog .crop-footer,
-.send-identity-dialog .crop-header,
-.send-identity-dialog .crop-footer {
+.transfer-identity-dialog .crop-header,
+.transfer-identity-dialog .crop-footer {
   grid-area: auto;
 }
 
 .photo-edit-dialog .crop-footer,
-.send-identity-dialog .crop-footer {
+.transfer-identity-dialog .crop-footer {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
@@ -724,8 +724,8 @@ select:focus {
 
 .photo-edit-dialog .ghost-btn,
 .photo-edit-dialog .primary-btn,
-.send-identity-dialog .ghost-btn,
-.send-identity-dialog .primary-btn {
+.transfer-identity-dialog .ghost-btn,
+.transfer-identity-dialog .primary-btn {
   width: auto;
   min-width: 120px;
 }
@@ -1815,28 +1815,28 @@ select:focus {
 
   .crop-modal,
   .photo-edit-modal,
-  .send-identity-modal {
+  .transfer-identity-modal {
     align-items: end;
     padding: calc(10px + env(safe-area-inset-top)) 10px calc(10px + env(safe-area-inset-bottom));
   }
 
   .photo-edit-dialog,
-  .send-identity-dialog {
+  .transfer-identity-dialog {
     width: 100%;
     max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 20px);
     padding: 14px;
   }
 
   .photo-edit-dialog .crop-footer,
-  .send-identity-dialog .crop-footer {
+  .transfer-identity-dialog .crop-footer {
     display: grid;
     grid-template-columns: 1fr;
   }
 
   .photo-edit-dialog .ghost-btn,
   .photo-edit-dialog .primary-btn,
-  .send-identity-dialog .ghost-btn,
-  .send-identity-dialog .primary-btn {
+  .transfer-identity-dialog .ghost-btn,
+  .transfer-identity-dialog .primary-btn {
     width: 100%;
     min-width: 0;
   }
