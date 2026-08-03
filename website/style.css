@@ -2129,6 +2129,68 @@ select:focus {
   }
 }
 
+/* On phones the editor should scroll as a full-height sheet instead of shrinking
+   the canvas and controls to make every row fit in the viewport at once. */
+@media (max-width: 640px), (max-height: 520px) and (pointer: coarse) {
+  .crop-modal {
+    align-items: stretch;
+    padding: 0;
+  }
+
+  .crop-dialog {
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    grid-template-rows: auto auto auto auto;
+    gap: 12px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding:
+      calc(12px + env(safe-area-inset-top))
+      12px
+      calc(12px + env(safe-area-inset-bottom));
+    border-radius: 0;
+  }
+
+  .crop-header,
+  .crop-stage-wrap,
+  .crop-controls,
+  .crop-footer {
+    min-width: 0;
+  }
+
+  .crop-stage-wrap {
+    min-height: min(126vw, 524px);
+    overflow: visible;
+    padding: 10px;
+  }
+
+  #cropCanvas {
+    width: min(78vw, 333px);
+    max-width: 100%;
+    max-height: none;
+    height: auto;
+    flex: 0 0 auto;
+  }
+
+  .crop-controls {
+    overflow: visible;
+  }
+
+  .crop-footer {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    bottom: calc(-12px - env(safe-area-inset-bottom));
+    z-index: 2;
+    margin: 0 -12px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    box-shadow: 0 -8px 20px rgba(15, 23, 42, 0.08);
+  }
+}
+
 @media (max-width: 390px) {
   .auth-copy h1 {
     font-size: 29px;
