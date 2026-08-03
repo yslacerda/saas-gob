@@ -1,0 +1,24 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "builds": [
+    {
+      "src": "website/server.js",
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": [
+          "website/index.html",
+          "website/app.js",
+          "website/style.css",
+          "website/assets/**"
+        ]
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "website/server.js"
+    }
+  ]
+}
