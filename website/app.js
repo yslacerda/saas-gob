@@ -955,7 +955,7 @@ function createLegacyPhotoEditState(source) {
     offsetY: 0,
     eraserSize: 18,
     pencilSize: 18,
-    sticker: null,
+    stickers: [],
     brushHistory: []
   };
 }
@@ -1017,6 +1017,11 @@ async function openCropper(stepKey, file = null, statusElement = null, savedEdit
   }
   const restoredEdit = savedEdit || createLegacyPhotoEditState(source);
   const sharedZoom = state.standardCropZoom;
+  const restoredStickers = Array.isArray(restoredEdit.stickers)
+    ? clonePhotoEditState(restoredEdit.stickers)
+    : restoredEdit.sticker
+      ? [{ ...restoredEdit.sticker }]
+      : [];
   documentCrop.current = {
     stepKey,
     image,
@@ -1029,7 +1034,8 @@ async function openCropper(stepKey, file = null, statusElement = null, savedEdit
     mode: "move",
     eraserSize: Number(restoredEdit.eraserSize) || 18,
     pencilSize: Number(restoredEdit.pencilSize) || 18,
-    sticker: restoredEdit.sticker ? { ...restoredEdit.sticker } : null,
+    stickers: restoredStickers,
+    activeStickerIndex: restoredStickers.length - 1,
     rotation: Number(restoredEdit.rotation) || 0,
     zoom: sharedZoom || Number(restoredEdit.zoom) || 1,
     offsetX: Number(restoredEdit.offsetX) || 0,
@@ -1173,24 +1179,25 @@ function drawImagePaint(context, crop) {
 }
 
 function drawImageSticker(context, crop, includePreviewHelpers) {
-  if (!crop.sticker || !crop.templateImages) return;
+  if (!Array.isArray(crop.stickers) || !crop.templateImages) return;
 
-  const sticker = crop.sticker;
-  const stickerImage = crop.templateImages[sticker.templateKey] || crop.templateImages.number7;
-  if (!stickerImage) return;
-  const x = sticker.x - crop.image.naturalWidth / 2;
-  const y = sticker.y - crop.image.naturalHeight / 2;
+  crop.stickers.forEach((sticker, index) => {
+    const stickerImage = crop.templateImages[sticker.templateKey] || crop.templateImages.number7;
+    if (!stickerImage) return;
+    const x = sticker.x - crop.image.naturalWidth / 2;
+    const y = sticker.y - crop.image.naturalHeight / 2;
 
-  context.drawImage(stickerImage, x, y, sticker.width, sticker.height);
+    context.drawImage(stickerImage, x, y, sticker.width, sticker.height);
 
-  if (includePreviewHelpers && isStickerMode(crop.mode)) {
-    context.save();
-    context.setLineDash([5, 4]);
-    context.strokeStyle = "rgba(19, 81, 180, 0.95)";
-    context.lineWidth = 1.5 / getPreviewScale();
-    context.strokeRect(x, y, sticker.width, sticker.height);
-    context.restore();
-  }
+    if (includePreviewHelpers && isStickerMode(crop.mode) && index === crop.activeStickerIndex) {
+      context.save();
+      context.setLineDash([5, 4]);
+      context.strokeStyle = "rgba(19, 81, 180, 0.95)";
+      context.lineWidth = 1.5 / getPreviewScale();
+      context.strokeRect(x, y, sticker.width, sticker.height);
+      context.restore();
+    }
+  });
 }
 
 function drawMaskedFill(context, maskCanvas, color, x, y) {
@@ -1291,7 +1298,7 @@ function applyCropperResult() {
     offsetY: crop.offsetY,
     eraserSize: crop.eraserSize,
     pencilSize: crop.pencilSize,
-    sticker: crop.sticker ? { ...crop.sticker } : null,
+    stickers: clonePhotoEditState(crop.stickers) || [],
     brushHistory: clonePhotoEditState(crop.brushHistory) || []
   };
 
@@ -1348,14 +1355,20 @@ function bindCropperEvents() {
     if (crop.stepKey === "front" && isStickerMode(crop.mode)) {
       const point = getImagePoint(event);
       if (!point) return;
-      if (!crop.sticker || !isPointerOnSticker(event)) {
+      let stickerIndex = findStickerIndexAtPoint(point);
+      if (stickerIndex < 0) {
         placeNumberStickerAt(point.x, point.y, stickerKeyFromMode(crop.mode));
+        stickerIndex = crop.activeStickerIndex;
+      } else {
+        crop.activeStickerIndex = stickerIndex;
       }
+      const sticker = crop.stickers[stickerIndex];
       crop.stickerDragStart = {
+        stickerIndex,
         x: point.x,
         y: point.y,
-        stickerX: crop.sticker.x,
-        stickerY: crop.sticker.y
+        stickerX: sticker.x,
+        stickerY: sticker.y
       };
       return;
     }
@@ -1391,11 +1404,13 @@ function bindCropperEvents() {
       return;
     }
 
-    if (crop.stickerDragStart && crop.sticker) {
+    if (crop.stickerDragStart && Array.isArray(crop.stickers)) {
       const point = getImagePoint(event);
       if (!point) return;
-      crop.sticker.x = clamp(crop.stickerDragStart.stickerX + point.x - crop.stickerDragStart.x, -crop.sticker.width / 2, crop.image.naturalWidth - crop.sticker.width / 2);
-      crop.sticker.y = clamp(crop.stickerDragStart.stickerY + point.y - crop.stickerDragStart.y, -crop.sticker.height / 2, crop.image.naturalHeight - crop.sticker.height / 2);
+      const sticker = crop.stickers[crop.stickerDragStart.stickerIndex];
+      if (!sticker) return;
+      sticker.x = clamp(crop.stickerDragStart.stickerX + point.x - crop.stickerDragStart.x, -sticker.width / 2, crop.image.naturalWidth - sticker.width / 2);
+      sticker.y = clamp(crop.stickerDragStart.stickerY + point.y - crop.stickerDragStart.y, -sticker.height / 2, crop.image.naturalHeight - sticker.height / 2);
       drawCropCanvas();
       return;
     }
@@ -1464,7 +1479,7 @@ function syncFrontEditTools() {
   syncBrushUndoButton();
   if (note) {
     note.textContent = crop && crop.stepKey === "front"
-      ? "O primeiro recorte define o zoom das demais fotos. A borracha cobre foto, lapis e numeros; Desfazer pode ser usado varias vezes."
+      ? "O primeiro recorte define o zoom das demais fotos. Os numeros 7 e 0 podem ser usados juntos; a borracha cobre tudo e Desfazer pode ser usado varias vezes."
       : "Arraste para centralizar. O primeiro recorte define o mesmo percentual de zoom para todas as fotos.";
   }
   setCropMode(crop && crop.stepKey === "front" ? crop.mode : "move");
@@ -1653,13 +1668,16 @@ function paintAtCanvasPoint(event) {
   requestCropCanvasDraw();
 }
 
-function isPointerOnSticker(event) {
+function findStickerIndexAtPoint(point) {
   const crop = documentCrop.current;
-  if (!crop || !crop.sticker) return false;
-  const point = getImagePoint(event);
-  if (!point) return false;
-  const sticker = crop.sticker;
-  return point.x >= sticker.x && point.x <= sticker.x + sticker.width && point.y >= sticker.y && point.y <= sticker.y + sticker.height;
+  if (!crop || !point || !Array.isArray(crop.stickers)) return -1;
+  for (let index = crop.stickers.length - 1; index >= 0; index -= 1) {
+    const sticker = crop.stickers[index];
+    if (point.x >= sticker.x && point.x <= sticker.x + sticker.width && point.y >= sticker.y && point.y <= sticker.y + sticker.height) {
+      return index;
+    }
+  }
+  return -1;
 }
 
 function addNumberSticker() {
@@ -1690,28 +1708,31 @@ function placeNumberStickerAt(centerX, centerY, templateKey = "number7") {
   if (!crop || crop.stepKey !== "front" || !stickerImage) return;
   const width = getStickerImageWidth(Number(document.querySelector("#stickerSize")?.value || 150));
   const height = width * (stickerImage.naturalHeight / stickerImage.naturalWidth);
-  crop.sticker = {
+  const sticker = {
     templateKey,
     x: clamp(centerX - width / 2, -width / 2, crop.image.naturalWidth - width / 2),
     y: clamp(centerY - height / 2, -height / 2, crop.image.naturalHeight - height / 2),
     width,
     height
   };
+  crop.stickers.push(sticker);
+  crop.activeStickerIndex = crop.stickers.length - 1;
   setCropMode(templateKey === "number0" ? "sticker0" : "sticker7");
 }
 
 function resizeNumberSticker(width) {
   const crop = documentCrop.current;
-  const stickerImage = crop && crop.sticker && crop.templateImages ? crop.templateImages[crop.sticker.templateKey] : null;
-  if (!crop || !crop.sticker || !stickerImage) return;
-  const centerX = crop.sticker.x + crop.sticker.width / 2;
-  const centerY = crop.sticker.y + crop.sticker.height / 2;
+  const sticker = crop && Array.isArray(crop.stickers) ? crop.stickers[crop.activeStickerIndex] : null;
+  const stickerImage = crop && sticker && crop.templateImages ? crop.templateImages[sticker.templateKey] : null;
+  if (!crop || !sticker || !stickerImage) return;
+  const centerX = sticker.x + sticker.width / 2;
+  const centerY = sticker.y + sticker.height / 2;
   const imageWidth = getStickerImageWidth(width);
   const height = imageWidth * (stickerImage.naturalHeight / stickerImage.naturalWidth);
-  crop.sticker.width = imageWidth;
-  crop.sticker.height = height;
-  crop.sticker.x = clamp(centerX - imageWidth / 2, -imageWidth / 2, crop.image.naturalWidth - imageWidth / 2);
-  crop.sticker.y = clamp(centerY - height / 2, -height / 2, crop.image.naturalHeight - height / 2);
+  sticker.width = imageWidth;
+  sticker.height = height;
+  sticker.x = clamp(centerX - imageWidth / 2, -imageWidth / 2, crop.image.naturalWidth - imageWidth / 2);
+  sticker.y = clamp(centerY - height / 2, -height / 2, crop.image.naturalHeight - height / 2);
   drawCropCanvas();
 }
 
@@ -1734,6 +1755,11 @@ async function renderStoredPhotoEdit(stepKey, edit) {
     layer.height = image.naturalHeight;
     return layer;
   };
+  const storedStickers = Array.isArray(edit.stickers)
+    ? clonePhotoEditState(edit.stickers)
+    : edit.sticker
+      ? [{ ...edit.sticker }]
+      : [];
   const crop = {
     stepKey,
     image,
@@ -1749,7 +1775,8 @@ async function renderStoredPhotoEdit(stepKey, edit) {
     mode: "move",
     eraserSize: Number(edit.eraserSize) || 18,
     pencilSize: Number(edit.pencilSize) || 18,
-    sticker: edit.sticker ? { ...edit.sticker } : null,
+    stickers: storedStickers,
+    activeStickerIndex: storedStickers.length - 1,
     rotation: Number(edit.rotation) || 0,
     zoom: Number(edit.zoom) || 1,
     offsetX: Number(edit.offsetX) || 0,
