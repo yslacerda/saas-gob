@@ -54,6 +54,7 @@ const documentCrop = {
 const cropEraseBackground = "#f7f5e9";
 const cropPencilColor = "#e7e7c3";
 const cropEraseFillColor = cropPencilColor;
+const maxCropZoom = 30;
 
 const referenceView = {
   mode: "wallet",
@@ -443,7 +444,7 @@ async function renderDashboardPage() {
           <div class="crop-controls">
             <label>
               <span>Zoom</span>
-              <input id="cropZoom" type="range" min="0.1" max="6" step="0.01" value="1" />
+              <input id="cropZoom" type="range" min="0.1" max="${maxCropZoom}" step="0.01" value="1" />
             </label>
             <div class="crop-actions-row">
               <button class="secondary-btn" type="button" id="cropRotateLeft">Girar esquerda</button>
@@ -1058,7 +1059,7 @@ async function openCropper(stepKey, file = null, statusElement = null, savedEdit
   if (title) title.textContent = `Ajuste: ${step ? step.label : "Imagem"}`;
   if (zoomInput) {
     zoomInput.min = "0.1";
-    zoomInput.max = "6";
+    zoomInput.max = String(maxCropZoom);
     zoomInput.value = documentCrop.current.zoom.toFixed(2);
     zoomInput.disabled = Boolean(state.standardCropZoom);
     zoomInput.title = state.standardCropZoom ? "Zoom padronizado pelo primeiro recorte desta edicao" : "";
@@ -1137,6 +1138,7 @@ function drawCropToCanvas(canvas, includeBorder = false) {
   const { scale, offsetScale } = getCropTransform(crop, width, height);
 
   context.clearRect(0, 0, width, height);
+  context.imageSmoothingEnabled = !(includeBorder && crop.zoom >= 6);
   context.fillStyle = cropEraseBackground;
   context.fillRect(0, 0, width, height);
   context.save();
@@ -1249,7 +1251,7 @@ function applyCropPinchZoom(crop, zoomInput) {
   if (distance <= 0) return;
 
   const minZoom = Number(zoomInput.min || 0.1);
-  const maxZoom = Number(zoomInput.max || 4);
+  const maxZoom = Number(zoomInput.max || maxCropZoom);
   crop.zoom = clamp(crop.pinchStartZoom * (distance / crop.pinchStartDistance), minZoom, maxZoom);
   zoomInput.value = crop.zoom.toFixed(2);
   constrainCropOffset();
