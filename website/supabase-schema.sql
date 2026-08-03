@@ -26,11 +26,14 @@ CREATE TABLE IF NOT EXISTS identities (
   cpf TEXT NOT NULL DEFAULT '',
   photo_data_url TEXT,
   photo_slides_json TEXT,
+  photo_edit_states_json TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_identities_user_id ON identities(user_id);
+
+ALTER TABLE identities ADD COLUMN IF NOT EXISTS photo_edit_states_json TEXT;
 
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;

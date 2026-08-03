@@ -7,6 +7,8 @@ const state = {
   csrfToken: "",
   authMode: "login",
   croppedPhotos: {},
+  photoEditStates: {},
+  standardCropZoom: null,
   editingPhotosFor: null,
   sendingIdentityFor: null
 };
@@ -297,6 +299,8 @@ async function renderDashboardPage() {
   await loadIdentities();
   await loadUsers();
   state.croppedPhotos = {};
+  state.photoEditStates = {};
+  state.standardCropZoom = null;
 
   renderShell(`
     <section class="dashboard-page">
@@ -381,17 +385,20 @@ async function renderDashboardPage() {
             <div>
               <span class="eyebrow">Editar identidade</span>
               <h2>Editar fotos</h2>
-              <p>Substitua uma ou mais fotos e aplique o recorte antes de salvar.</p>
+              <p>Edite as fotos atuais ou substitua somente as que desejar.</p>
             </div>
             <button class="crop-icon-btn" type="button" id="photoEditClose" aria-label="Fechar">x</button>
           </div>
           <div class="ordered-uploads" aria-label="Fotos da identidade para editar">
             ${documentUploadSteps.map((step, index) => `
-              <label class="upload-step">
-                <span>${index + 1}. ${step.label}${index < requiredDocumentUploadSteps.length ? "" : " (opcional)"}</span>
-                <input name="edit-${step.key}" type="file" accept="${acceptedPhotoTypes}" />
-                <small class="crop-status ready" data-edit-crop-status="${step.key}" aria-live="polite">${index < requiredDocumentUploadSteps.length ? `Foto atual mantida - ${documentCrop.width}x${documentCrop.height}` : "QR padrao mantido se nenhum arquivo for enviado."}</small>
-              </label>
+              <div class="upload-step">
+                <label>
+                  <span>${index + 1}. ${step.label}${index < requiredDocumentUploadSteps.length ? "" : " (opcional)"}</span>
+                  <input name="edit-${step.key}" type="file" accept="${acceptedPhotoTypes}" />
+                  <small class="crop-status ready" data-edit-crop-status="${step.key}" aria-live="polite">${index < requiredDocumentUploadSteps.length ? `Foto atual mantida - ${documentCrop.width}x${documentCrop.height}` : "QR padrao mantido se nenhum arquivo for enviado."}</small>
+                </label>
+                <button class="secondary-btn edit-current-photo-btn" type="button" data-edit-current-photo="${step.key}">Editar foto atual</button>
+              </div>
             `).join("")}
           </div>
           <div class="crop-footer">
@@ -568,11 +575,19 @@ function openPhotoEditModal(identityId) {
 
   state.editingPhotosFor = identityId;
   state.croppedPhotos = {};
+  state.photoEditStates = {};
+  state.standardCropZoom = null;
   documentUploadSteps.forEach((step, index) => {
     state.croppedPhotos[step.key] = identity.photoSlides && identity.photoSlides[index] ? identity.photoSlides[index] : "";
+    const savedEdit = identity.photoEditStates && identity.photoEditStates[step.key];
+    state.photoEditStates[step.key] = clonePhotoEditState(savedEdit) || (state.croppedPhotos[step.key]
+      ? createLegacyPhotoEditState(state.croppedPhotos[step.key])
+      : null);
     const input = form.querySelector(`input[name="edit-${step.key}"]`);
     const status = form.querySelector(`[data-edit-crop-status="${step.key}"]`);
+    const editButton = form.querySelector(`[data-edit-current-photo="${step.key}"]`);
     if (input) input.value = "";
+    if (editButton) editButton.disabled = !(state.photoEditStates[step.key] && state.photoEditStates[step.key].source);
     if (status) {
       status.textContent = state.croppedPhotos[step.key]
         ? `${step.key === "qr" ? "QR editado mantido" : "Foto atual mantida"} - ${documentCrop.width}x${documentCrop.height}`
@@ -595,6 +610,8 @@ function closePhotoEditModal() {
   setModalScrollLock(false);
   state.editingPhotosFor = null;
   state.croppedPhotos = {};
+  state.photoEditStates = {};
+  state.standardCropZoom = null;
 }
 
 function openSendIdentityModal(identityId) {
@@ -922,6 +939,25 @@ function loadImage(src) {
   });
 }
 
+function createLegacyPhotoEditState(source) {
+  return {
+    source,
+    rotation: 0,
+    zoom: 1,
+    offsetX: 0,
+    offsetY: 0,
+    eraserSize: 18,
+    pencilSize: 18,
+    sticker: null,
+    brushHistory: []
+  };
+}
+
+function clonePhotoEditState(edit) {
+  if (!edit) return null;
+  return JSON.parse(JSON.stringify(edit));
+}
+
 function resetCropState() {
   if (documentCrop.current && documentCrop.current.renderFrame) {
     cancelAnimationFrame(documentCrop.current.renderFrame);
@@ -929,16 +965,21 @@ function resetCropState() {
   documentCrop.current = null;
 }
 
-async function openCropper(stepKey, file, statusElement = null) {
-  if (!(file instanceof File) || !file.name) return;
-  if (!acceptedPhotoTypes.split(",").includes(file.type)) {
-    throw new Error("A imagem deve ser JPG, PNG, WEBP, HEIC, HEIF, GIF ou BMP.");
+async function openCropper(stepKey, file = null, statusElement = null, savedEdit = null) {
+  let source = savedEdit && savedEdit.source;
+  if (file instanceof File && file.name) {
+    if (!acceptedPhotoTypes.split(",").includes(file.type)) {
+      throw new Error("A imagem deve ser JPG, PNG, WEBP, HEIC, HEIF, GIF ou BMP.");
+    }
+    if (file.size > maxPhotoSizeBytes) {
+      throw new Error("A imagem deve ter no maximo 4 MB.");
+    }
+    source = await readFileAsDataUrl(file);
+    savedEdit = null;
   }
-  if (file.size > maxPhotoSizeBytes) {
-    throw new Error("A imagem deve ter no maximo 4 MB.");
-  }
+  if (!source) return;
 
-  const image = await loadImage(await readFileAsDataUrl(file));
+  const image = await loadImage(source);
   const canvas = document.querySelector("#cropCanvas");
   const zoomInput = document.querySelector("#cropZoom");
   const modal = document.querySelector("#cropModal");
@@ -967,27 +1008,31 @@ async function openCropper(stepKey, file, statusElement = null) {
     paintCanvas.width = image.naturalWidth;
     paintCanvas.height = image.naturalHeight;
   }
+  const restoredEdit = savedEdit || createLegacyPhotoEditState(source);
+  const sharedZoom = state.standardCropZoom;
   documentCrop.current = {
     stepKey,
     image,
+    source,
     templateImages,
     eraseCanvas,
     eraseFillCanvas,
     eraseFillDirty: true,
     paintCanvas,
     mode: "move",
-    eraserSize: 18,
-    pencilSize: 18,
-    sticker: null,
-    rotation: 0,
-    zoom: 1,
-    offsetX: 0,
-    offsetY: 0,
+    eraserSize: Number(restoredEdit.eraserSize) || 18,
+    pencilSize: Number(restoredEdit.pencilSize) || 18,
+    sticker: restoredEdit.sticker ? { ...restoredEdit.sticker } : null,
+    rotation: Number(restoredEdit.rotation) || 0,
+    zoom: sharedZoom || Number(restoredEdit.zoom) || 1,
+    offsetX: Number(restoredEdit.offsetX) || 0,
+    offsetY: Number(restoredEdit.offsetY) || 0,
     dragStart: null,
     eraseStart: false,
     pencilStart: false,
     brushLastPoint: null,
-    brushUndoSnapshot: null,
+    brushHistory: Array.isArray(restoredEdit.brushHistory) ? clonePhotoEditState(restoredEdit.brushHistory) : [],
+    activeBrushStroke: null,
     stickerDragStart: null,
     activePointers: new Map(),
     pinchStartDistance: 0,
@@ -995,13 +1040,20 @@ async function openCropper(stepKey, file, statusElement = null) {
     renderFrame: 0,
     statusElement
   };
+  rebuildBrushCanvases(documentCrop.current);
 
   if (title) title.textContent = `Ajuste: ${step ? step.label : "Imagem"}`;
   if (zoomInput) {
     zoomInput.min = "0.1";
     zoomInput.max = "6";
-    zoomInput.value = "1";
+    zoomInput.value = documentCrop.current.zoom.toFixed(2);
+    zoomInput.disabled = Boolean(state.standardCropZoom);
+    zoomInput.title = state.standardCropZoom ? "Zoom padronizado pelo primeiro recorte desta edicao" : "";
   }
+  const eraserInput = document.querySelector("#eraserSize");
+  const pencilInput = document.querySelector("#pencilSize");
+  if (eraserInput) eraserInput.value = String(documentCrop.current.eraserSize);
+  if (pencilInput) pencilInput.value = String(documentCrop.current.pencilSize);
   if (modal) {
     modal.hidden = false;
     setModalScrollLock(true);
@@ -1079,9 +1131,10 @@ function drawCropToCanvas(canvas, includeBorder = false) {
   context.rotate((crop.rotation * Math.PI) / 180);
   context.scale(scale, scale);
   context.drawImage(crop.image, -crop.image.naturalWidth / 2, -crop.image.naturalHeight / 2);
-  drawImageEraseMask(context, crop);
   drawImageSticker(context, crop, includeBorder);
   drawImagePaint(context, crop);
+  // The eraser is the topmost edit layer so it can cover the photo, pencil and number template.
+  drawImageEraseMask(context, crop);
   context.restore();
 
   drawFrontEdits(context, canvas, includeBorder);
@@ -1172,6 +1225,7 @@ function resetCropPointerActions(crop) {
   crop.eraseStart = false;
   crop.pencilStart = false;
   crop.brushLastPoint = null;
+  crop.activeBrushStroke = null;
   crop.stickerDragStart = null;
 }
 
@@ -1204,7 +1258,7 @@ function closeCropper(clearInput = false) {
     setModalScrollLock(false);
   }
   if (clearInput && crop) {
-    const input = document.querySelector(`input[name="${crop.stepKey}"]`);
+    const input = document.querySelector(`input[name="${crop.stepKey}"], input[name="edit-${crop.stepKey}"]`);
     if (input) input.value = "";
   }
   resetCropState();
@@ -1221,6 +1275,18 @@ function applyCropperResult() {
   output.height = documentCrop.height;
   drawCropToCanvas(output, false);
   state.croppedPhotos[crop.stepKey] = output.toDataURL("image/jpeg", 0.92);
+  if (!state.standardCropZoom) state.standardCropZoom = crop.zoom;
+  state.photoEditStates[crop.stepKey] = {
+    source: crop.source,
+    rotation: crop.rotation,
+    zoom: state.standardCropZoom,
+    offsetX: crop.offsetX,
+    offsetY: crop.offsetY,
+    eraserSize: crop.eraserSize,
+    pencilSize: crop.pencilSize,
+    sticker: crop.sticker ? { ...crop.sticker } : null,
+    brushHistory: clonePhotoEditState(crop.brushHistory) || []
+  };
 
   const status = crop.statusElement || document.querySelector(`[data-crop-status="${crop.stepKey}"]`);
   if (status) {
@@ -1236,7 +1302,7 @@ function bindCropperEvents() {
   if (!canvas || !zoomInput) return;
 
   zoomInput.addEventListener("input", () => {
-    if (!documentCrop.current) return;
+    if (!documentCrop.current || zoomInput.disabled) return;
     documentCrop.current.zoom = Number(zoomInput.value);
     constrainCropOffset();
     drawCropCanvas();
@@ -1259,7 +1325,7 @@ function bindCropperEvents() {
     if (crop.stepKey === "front" && crop.mode === "erase") {
       crop.eraseStart = true;
       crop.brushLastPoint = null;
-      saveBrushUndoSnapshot("erase");
+      startBrushStroke("erase");
       applyBrushFromPointerEvent(event, "erase");
       return;
     }
@@ -1267,7 +1333,7 @@ function bindCropperEvents() {
     if (crop.stepKey === "front" && crop.mode === "pencil") {
       crop.pencilStart = true;
       crop.brushLastPoint = null;
-      saveBrushUndoSnapshot("pencil");
+      startBrushStroke("pencil");
       applyBrushFromPointerEvent(event, "pencil");
       return;
     }
@@ -1391,8 +1457,8 @@ function syncFrontEditTools() {
   syncBrushUndoButton();
   if (note) {
     note.textContent = crop && crop.stepKey === "front"
-      ? "Use Mover para ajustar a foto. A borracha cobre pixels com a cor do documento; Lapis pinta em #e7e7c3; Numero 7 e Numero 0 permitem arrastar adesivos."
-      : "Arraste a imagem dentro do quadro para centralizar antes de aplicar.";
+      ? "O primeiro recorte define o zoom das demais fotos. A borracha cobre foto, lapis e numeros; Desfazer pode ser usado varias vezes."
+      : "Arraste para centralizar. O primeiro recorte define o mesmo percentual de zoom para todas as fotos.";
   }
   setCropMode(crop && crop.stepKey === "front" ? crop.mode : "move");
 }
@@ -1410,7 +1476,7 @@ function syncBrushUndoButton() {
   const button = document.querySelector("#undoBrushStroke");
   if (!button) return;
   const crop = documentCrop.current;
-  button.disabled = !(crop && crop.stepKey === "front" && crop.brushUndoSnapshot);
+  button.disabled = !(crop && crop.stepKey === "front" && crop.brushHistory && crop.brushHistory.length);
 }
 
 function getCanvasPoint(event) {
@@ -1462,35 +1528,40 @@ function getBrushPointerEvents(event) {
     : [event];
 }
 
-function saveBrushUndoSnapshot(tool) {
+function startBrushStroke(tool) {
   const crop = documentCrop.current;
-  const targetCanvas = crop && (tool === "erase" ? crop.eraseCanvas : crop.paintCanvas);
-  if (!crop || !targetCanvas) return;
-
-  const context = targetCanvas.getContext("2d");
-  crop.brushUndoSnapshot = {
-    tool,
-    imageData: context.getImageData(0, 0, targetCanvas.width, targetCanvas.height)
-  };
+  if (!crop) return;
+  if (crop.brushHistory.length >= 500) crop.brushHistory.shift();
+  crop.activeBrushStroke = { tool, points: [] };
+  crop.brushHistory.push(crop.activeBrushStroke);
   syncBrushUndoButton();
 }
 
 function undoBrushStroke() {
   const crop = documentCrop.current;
-  const snapshot = crop && crop.brushUndoSnapshot;
-  if (!crop || !snapshot) return;
-
-  const targetCanvas = snapshot.tool === "erase" ? crop.eraseCanvas : crop.paintCanvas;
-  if (!targetCanvas) return;
-
-  targetCanvas.getContext("2d").putImageData(snapshot.imageData, 0, 0);
-  if (snapshot.tool === "erase") {
-    crop.eraseFillDirty = true;
-  }
-  crop.brushUndoSnapshot = null;
+  if (!crop || !crop.brushHistory || !crop.brushHistory.length) return;
+  crop.brushHistory.pop();
+  crop.activeBrushStroke = null;
   crop.brushLastPoint = null;
+  rebuildBrushCanvases(crop);
   syncBrushUndoButton();
   drawCropCanvas();
+}
+
+function rebuildBrushCanvases(crop) {
+  if (!crop) return;
+  for (const layer of [crop.eraseCanvas, crop.paintCanvas]) {
+    if (layer) layer.getContext("2d").clearRect(0, 0, layer.width, layer.height);
+  }
+  crop.eraseFillDirty = true;
+  crop.brushLastPoint = null;
+  for (const stroke of crop.brushHistory || []) {
+    crop.brushLastPoint = null;
+    for (const point of stroke.points || []) {
+      drawBrushAtImagePoint(point, stroke.tool, false);
+    }
+  }
+  crop.brushLastPoint = null;
 }
 
 function applyBrushFromPointerEvent(event, tool) {
@@ -1505,7 +1576,7 @@ function applyBrushFromPointerEvent(event, tool) {
   requestCropCanvasDraw();
 }
 
-function drawBrushAtImagePoint(point, tool) {
+function drawBrushAtImagePoint(point, tool, recordPoint = true) {
   const crop = documentCrop.current;
   if (!crop) return;
 
@@ -1544,6 +1615,14 @@ function drawBrushAtImagePoint(point, tool) {
 
   context.restore();
   crop.brushLastPoint = { x: point.x, y: point.y, tool };
+  if (recordPoint && crop.activeBrushStroke) {
+    crop.activeBrushStroke.points.push({
+      x: point.x,
+      y: point.y,
+      eraseRadius: point.eraseRadius,
+      pencilRadius: point.pencilRadius
+    });
+  }
   if (tool === "erase") {
     crop.eraseFillDirty = true;
   }
@@ -1636,6 +1715,67 @@ function getStickerImageWidth(outputWidth) {
   const previewScale = canvas.width / documentCrop.width;
   const imageScale = getCropTransform(crop, canvas.width, canvas.height).scale;
   return Math.max(1, (outputWidth * previewScale) / imageScale);
+}
+
+async function renderStoredPhotoEdit(stepKey, edit) {
+  if (!edit || !edit.source) return "";
+  const image = await loadImage(edit.source);
+  const isFront = stepKey === "front";
+  const makeLayer = () => {
+    const layer = document.createElement("canvas");
+    layer.width = image.naturalWidth;
+    layer.height = image.naturalHeight;
+    return layer;
+  };
+  const crop = {
+    stepKey,
+    image,
+    source: edit.source,
+    templateImages: isFront ? {
+      number7: await loadImage(cropTemplateAssets.number7),
+      number0: await loadImage(cropTemplateAssets.number0)
+    } : {},
+    eraseCanvas: isFront ? makeLayer() : null,
+    eraseFillCanvas: isFront ? makeLayer() : null,
+    eraseFillDirty: true,
+    paintCanvas: isFront ? makeLayer() : null,
+    mode: "move",
+    eraserSize: Number(edit.eraserSize) || 18,
+    pencilSize: Number(edit.pencilSize) || 18,
+    sticker: edit.sticker ? { ...edit.sticker } : null,
+    rotation: Number(edit.rotation) || 0,
+    zoom: Number(edit.zoom) || 1,
+    offsetX: Number(edit.offsetX) || 0,
+    offsetY: Number(edit.offsetY) || 0,
+    brushHistory: clonePhotoEditState(edit.brushHistory) || [],
+    brushLastPoint: null,
+    activeBrushStroke: null
+  };
+  const previousCrop = documentCrop.current;
+  documentCrop.current = crop;
+  try {
+    rebuildBrushCanvases(crop);
+    constrainCropOffset();
+    edit.offsetX = crop.offsetX;
+    edit.offsetY = crop.offsetY;
+    const output = document.createElement("canvas");
+    output.width = documentCrop.width;
+    output.height = documentCrop.height;
+    drawCropToCanvas(output, false);
+    return output.toDataURL("image/jpeg", 0.92);
+  } finally {
+    documentCrop.current = previousCrop;
+  }
+}
+
+async function standardizeSavedPhotoZooms() {
+  if (!state.standardCropZoom) return;
+  for (const step of documentUploadSteps) {
+    const edit = state.photoEditStates[step.key];
+    if (!edit || !edit.source) continue;
+    edit.zoom = state.standardCropZoom;
+    state.croppedPhotos[step.key] = await renderStoredPhotoEdit(step.key, edit);
+  }
 }
 
 async function readOrderedPhotoSlides(form) {
@@ -1750,6 +1890,7 @@ function bindEvents() {
       const input = identityForm.querySelector(`input[name="${step.key}"]`);
       input?.addEventListener("change", async () => {
         delete state.croppedPhotos[step.key];
+        delete state.photoEditStates[step.key];
         const status = document.querySelector(`[data-crop-status="${step.key}"]`);
         if (status) {
           status.textContent = step.key === "qr"
@@ -1784,7 +1925,8 @@ function bindEvents() {
             displayName: form.get("displayName"),
             cpf: form.get("cpf"),
             userId: form.get("userId"),
-            photoSlides: await readOrderedPhotoSlides(form)
+            photoSlides: await readOrderedPhotoSlides(form),
+            photoEditStates: state.photoEditStates
           })
         });
 
@@ -1802,6 +1944,7 @@ function bindEvents() {
       const input = photoEditForm.querySelector(`input[name="edit-${step.key}"]`);
       input?.addEventListener("change", async () => {
         delete state.croppedPhotos[step.key];
+        delete state.photoEditStates[step.key];
         const status = photoEditForm.querySelector(`[data-edit-crop-status="${step.key}"]`);
         if (status) {
           status.textContent = `Recorte pendente - ${documentCrop.width}x${documentCrop.height}`;
@@ -1817,6 +1960,20 @@ function bindEvents() {
       });
     });
 
+    photoEditForm.querySelectorAll("[data-edit-current-photo]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const stepKey = button.dataset.editCurrentPhoto;
+        const savedEdit = state.photoEditStates[stepKey];
+        const status = photoEditForm.querySelector(`[data-edit-crop-status="${stepKey}"]`);
+        if (!savedEdit || !savedEdit.source) return;
+        try {
+          await openCropper(stepKey, null, status, clonePhotoEditState(savedEdit));
+        } catch (error) {
+          if (status) status.textContent = error.message;
+        }
+      });
+    });
+
     photoEditForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!state.editingPhotosFor) return;
@@ -1825,6 +1982,7 @@ function bindEvents() {
       if (currentMessage) currentMessage.remove();
 
       try {
+        await standardizeSavedPhotoZooms();
         const photoSlides = requiredDocumentUploadSteps.map((step) => {
           if (!state.croppedPhotos[step.key]) {
             throw new Error(`Aplique o recorte da foto: ${step.label}.`);
@@ -1837,7 +1995,7 @@ function bindEvents() {
 
         await api(`/api/identities/${encodeURIComponent(state.editingPhotosFor)}`, {
           method: "PATCH",
-          body: JSON.stringify({ photoSlides })
+          body: JSON.stringify({ photoSlides, photoEditStates: state.photoEditStates })
         });
         closePhotoEditModal();
         renderDashboardPage();

@@ -9,7 +9,7 @@ loadLocalEnv(path.join(webRoot, ".env.local"));
 const port = Number(process.env.PORT || 3000);
 const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
 const sessionMaxAgeMs = 7 * 24 * 60 * 60 * 1000;
-const maxJsonBodyLength = 25_000_000;
+const maxJsonBodyLength = 50_000_000;
 const allowBootstrapAdmin = process.env.ALLOW_BOOTSTRAP_ADMIN === "true";
 const secureCookies = process.env.NODE_ENV === "production" || process.env.SECURE_COOKIES === "true";
 const authRateLimitWindowMs = 15 * 60 * 1000;
@@ -137,6 +137,7 @@ const ready = (async () => {
       cpf TEXT NOT NULL DEFAULT '',
       photo_data_url TEXT,
       photo_slides_json TEXT,
+      photo_edit_states_json TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -144,6 +145,7 @@ const ready = (async () => {
   `);
   await run("ALTER TABLE identities ADD COLUMN IF NOT EXISTS photo_data_url TEXT");
   await run("ALTER TABLE identities ADD COLUMN IF NOT EXISTS photo_slides_json TEXT");
+  await run("ALTER TABLE identities ADD COLUMN IF NOT EXISTS photo_edit_states_json TEXT");
   await run("CREATE INDEX IF NOT EXISTS idx_identities_user_id ON identities(user_id)");
   await run("ALTER TABLE users ENABLE ROW LEVEL SECURITY");
   await run("ALTER TABLE sessions ENABLE ROW LEVEL SECURITY");
@@ -334,6 +336,7 @@ function publicIdentity(row) {
     displayName: row.full_name || "",
     cpf: row.cpf || "",
     photoSlides: parsePhotoSlides(row.photo_slides_json),
+    photoEditStates: parsePhotoEditStates(row.photo_edit_states_json),
     ownerName: row.owner_name || null,
     ownerUsername: row.owner_username || null,
     createdAt: row.created_at,
@@ -349,6 +352,42 @@ function parsePhotoSlides(value) {
   } catch {
     return [];
   }
+}
+
+function parsePhotoEditStates(value) {
+  if (!value) return {};
+  try {
+    const edits = JSON.parse(value);
+    return edits && typeof edits === "object" && !Array.isArray(edits) ? edits : {};
+  } catch {
+    return {};
+  }
+}
+
+function validatePhotoEditStates(value) {
+  if (value === undefined || value === null) return {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Os dados de edicao das fotos sao invalidos.");
+  }
+  const allowedKeys = new Set(["front", "back", "signature", "qr"]);
+  const result = {};
+  for (const [key, edit] of Object.entries(value)) {
+    if (!allowedKeys.has(key) || edit === null) continue;
+    if (!edit || typeof edit !== "object" || Array.isArray(edit)) {
+      throw new Error(`A edicao da foto ${key} e invalida.`);
+    }
+    const source = String(edit.source || "");
+    const match = /^data:([^;,]+);base64,[A-Za-z0-9+/=]+$/.exec(source);
+    if (!match || !acceptedPhotoMimeTypes.has(match[1]) || source.length > maxPhotoDataUrlLength) {
+      throw new Error(`O arquivo-fonte da foto ${key} e invalido ou excede 4 MB.`);
+    }
+    const brushHistory = Array.isArray(edit.brushHistory) ? edit.brushHistory : [];
+    if (brushHistory.length > 500 || brushHistory.some((stroke) => !stroke || !Array.isArray(stroke.points) || stroke.points.length > 50_000)) {
+      throw new Error(`O historico de edicao da foto ${key} excede o limite permitido.`);
+    }
+    result[key] = edit;
+  }
+  return result;
 }
 
 function validatePhotoSlides(value) {
@@ -574,6 +613,7 @@ async function handleApi(request, response, url) {
     const cpf = String(payload.cpf || "").trim();
     const targetUserId = isAdmin(user) && payload.userId ? String(payload.userId) : user.id;
     let photoSlides;
+    let photoEditStates;
 
     if (!requireUuid(targetUserId, response, "Usuario destino")) return;
 
@@ -584,6 +624,7 @@ async function handleApi(request, response, url) {
 
     try {
       photoSlides = validatePhotoSlides(payload.photoSlides);
+      photoEditStates = validatePhotoEditStates(payload.photoEditStates);
     } catch (error) {
       sendJson(response, 400, { error: error.message });
       return;
@@ -597,9 +638,9 @@ async function handleApi(request, response, url) {
 
     const id = crypto.randomUUID();
     await run(`
-      INSERT INTO identities (id, user_id, title, full_name, cpf, photo_slides_json)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [id, targetUserId, title, displayName, cpf, JSON.stringify(photoSlides)]);
+      INSERT INTO identities (id, user_id, title, full_name, cpf, photo_slides_json, photo_edit_states_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [id, targetUserId, title, displayName, cpf, JSON.stringify(photoSlides), JSON.stringify(photoEditStates)]);
     const row = await get(`
       SELECT identities.*, users.name AS owner_name, users.username AS owner_username
       FROM identities
@@ -645,9 +686,9 @@ async function handleApi(request, response, url) {
 
     const id = crypto.randomUUID();
     await run(`
-      INSERT INTO identities (id, user_id, title, full_name, cpf, photo_slides_json)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [id, targetUserId, sourceIdentity.title, sourceIdentity.full_name, sourceIdentity.cpf, sourceIdentity.photo_slides_json]);
+      INSERT INTO identities (id, user_id, title, full_name, cpf, photo_slides_json, photo_edit_states_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [id, targetUserId, sourceIdentity.title, sourceIdentity.full_name, sourceIdentity.cpf, sourceIdentity.photo_slides_json, sourceIdentity.photo_edit_states_json]);
     const row = await get(`
       SELECT identities.*, users.name AS owner_name, users.username AS owner_username
       FROM identities
@@ -684,6 +725,17 @@ async function handleApi(request, response, url) {
         const photoSlides = validatePhotoSlides(payload.photoSlides);
         updates.push("photo_slides_json = ?");
         params.push(JSON.stringify(photoSlides));
+      } catch (error) {
+        sendJson(response, 400, { error: error.message });
+        return;
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, "photoEditStates")) {
+      try {
+        const photoEditStates = validatePhotoEditStates(payload.photoEditStates);
+        updates.push("photo_edit_states_json = ?");
+        params.push(JSON.stringify(photoEditStates));
       } catch (error) {
         sendJson(response, 400, { error: error.message });
         return;
