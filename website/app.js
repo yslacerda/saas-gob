@@ -439,7 +439,7 @@ async function renderDashboardPage() {
             <button class="crop-icon-btn" type="button" id="cropCancel" aria-label="Fechar">x</button>
           </div>
           <div class="crop-stage-wrap">
-            <canvas id="cropCanvas" width="333" height="504" aria-label="Previa do recorte"></canvas>
+            <canvas id="cropCanvas" width="333" height="504" tabindex="0" aria-label="Previa do recorte"></canvas>
           </div>
           <div class="crop-controls">
             <label>
@@ -485,10 +485,59 @@ async function renderDashboardPage() {
                 <button class="secondary-btn" type="button" id="addNumberSticker">Adicionar 7</button>
                 <button class="secondary-btn" type="button" id="addNumberZeroSticker">Adicionar 0</button>
               </div>
-              <label>
-                <span>Tamanho do adesivo</span>
-                <input id="stickerSize" type="range" min="40" max="360" step="1" value="150" />
-              </label>
+              <div class="sticker-align-panel" id="stickerAlignPanel">
+                <div class="sticker-align-heading">
+                  <strong>Ajuste fino do adesivo</strong>
+                  <span id="selectedStickerLabel">Nenhum adesivo selecionado</span>
+                </div>
+                <label>
+                  <span>Largura</span>
+                  <div class="sticker-value-row">
+                    <input id="stickerWidth" data-sticker-control type="range" min="1" max="600" step="0.1" value="150" disabled />
+                    <input id="stickerWidthValue" data-sticker-control type="number" min="1" max="600" step="0.1" value="150" inputmode="decimal" aria-label="Largura do adesivo" disabled />
+                  </div>
+                </label>
+                <label>
+                  <span>Altura</span>
+                  <div class="sticker-value-row">
+                    <input id="stickerHeight" data-sticker-control type="range" min="1" max="600" step="0.1" value="150" disabled />
+                    <input id="stickerHeightValue" data-sticker-control type="number" min="1" max="600" step="0.1" value="150" inputmode="decimal" aria-label="Altura do adesivo" disabled />
+                  </div>
+                </label>
+                <div class="sticker-position-grid">
+                  <label>
+                    <span>Centro X</span>
+                    <input id="stickerPositionX" data-sticker-control type="number" step="0.1" inputmode="decimal" disabled />
+                  </label>
+                  <label>
+                    <span>Centro Y</span>
+                    <input id="stickerPositionY" data-sticker-control type="number" step="0.1" inputmode="decimal" disabled />
+                  </label>
+                </div>
+                <div class="sticker-nudge-controls">
+                  <label>
+                    <span>Passo</span>
+                    <select id="stickerNudgeStep" data-sticker-control disabled>
+                      <option value="0.1">0,1 px</option>
+                      <option value="0.5" selected>0,5 px</option>
+                      <option value="1">1 px</option>
+                      <option value="2">2 px</option>
+                      <option value="5">5 px</option>
+                    </select>
+                  </label>
+                  <div class="sticker-nudge-pad" aria-label="Mover adesivo com precisao">
+                    <button type="button" data-sticker-control data-sticker-nudge="0,-1" aria-label="Mover adesivo para cima" disabled>&uarr;</button>
+                    <button type="button" data-sticker-control data-sticker-nudge="-1,0" aria-label="Mover adesivo para esquerda" disabled>&larr;</button>
+                    <button type="button" data-sticker-control data-sticker-nudge="0,1" aria-label="Mover adesivo para baixo" disabled>&darr;</button>
+                    <button type="button" data-sticker-control data-sticker-nudge="1,0" aria-label="Mover adesivo para direita" disabled>&rarr;</button>
+                  </div>
+                </div>
+                <label>
+                  <span>Opacidade durante o alinhamento: <output id="stickerPreviewOpacityValue">55%</output></span>
+                  <input id="stickerPreviewOpacity" data-sticker-control type="range" min="15" max="100" step="1" value="55" disabled />
+                </label>
+                <small>A transparencia vale apenas na previa. Ao aplicar, o adesivo fica 100% opaco.</small>
+              </div>
             </div>
             <p class="form-note">Arraste a imagem dentro do quadro para centralizar antes de aplicar.</p>
           </div>
@@ -1060,6 +1109,7 @@ async function openCropper(stepKey, file = null, statusElement = null, savedEdit
     pencilColor: normalizePencilColor(restoredEdit.pencilColor) || cropPencilColor,
     stickers: restoredStickers,
     activeStickerIndex: restoredStickers.length - 1,
+    stickerPreviewOpacity: 0.55,
     rotation: Number(restoredEdit.rotation) || 0,
     zoom: sharedZoom || Number(restoredEdit.zoom) || 1,
     offsetX: Number(restoredEdit.offsetX) || 0,
@@ -1092,6 +1142,7 @@ async function openCropper(stepKey, file = null, statusElement = null, savedEdit
   if (eraserInput) eraserInput.value = String(documentCrop.current.eraserSize);
   if (pencilInput) pencilInput.value = String(documentCrop.current.pencilSize);
   syncPencilColorControls();
+  syncStickerAlignmentControls();
   if (modal) {
     modal.hidden = false;
     setModalScrollLock(true);
@@ -1213,14 +1264,28 @@ function drawImageSticker(context, crop, includePreviewHelpers) {
     const x = sticker.x - crop.image.naturalWidth / 2;
     const y = sticker.y - crop.image.naturalHeight / 2;
 
+    const isActivePreview = includePreviewHelpers && isStickerMode(crop.mode) && index === crop.activeStickerIndex;
+    context.save();
+    if (isActivePreview) context.globalAlpha = clamp(Number(crop.stickerPreviewOpacity) || 0.55, 0.15, 1);
     context.drawImage(stickerImage, x, y, sticker.width, sticker.height);
+    context.restore();
 
-    if (includePreviewHelpers && isStickerMode(crop.mode) && index === crop.activeStickerIndex) {
+    if (isActivePreview) {
       context.save();
       context.setLineDash([5, 4]);
       context.strokeStyle = "rgba(19, 81, 180, 0.95)";
       context.lineWidth = 1.5 / getPreviewScale();
       context.strokeRect(x, y, sticker.width, sticker.height);
+      const centerX = x + sticker.width / 2;
+      const centerY = y + sticker.height / 2;
+      const guideSize = 8 / getPreviewScale();
+      context.setLineDash([]);
+      context.beginPath();
+      context.moveTo(centerX - guideSize, centerY);
+      context.lineTo(centerX + guideSize, centerY);
+      context.moveTo(centerX, centerY - guideSize);
+      context.lineTo(centerX, centerY + guideSize);
+      context.stroke();
       context.restore();
     }
   });
@@ -1279,6 +1344,7 @@ function applyCropPinchZoom(crop, zoomInput) {
   crop.zoom = clamp(crop.pinchStartZoom * (distance / crop.pinchStartDistance), minZoom, maxZoom);
   zoomInput.value = crop.zoom.toFixed(2);
   constrainCropOffset();
+  syncStickerAlignmentControls();
   drawCropCanvas();
 }
 
@@ -1346,6 +1412,7 @@ function bindCropperEvents() {
     if (!documentCrop.current || zoomInput.disabled) return;
     documentCrop.current.zoom = Number(zoomInput.value);
     constrainCropOffset();
+    syncStickerAlignmentControls();
     drawCropCanvas();
   });
 
@@ -1395,6 +1462,7 @@ function bindCropperEvents() {
       } else {
         crop.activeStickerIndex = stickerIndex;
       }
+      syncStickerAlignmentControls();
       const sticker = crop.stickers[stickerIndex];
       crop.stickerDragStart = {
         stickerIndex,
@@ -1444,6 +1512,7 @@ function bindCropperEvents() {
       if (!sticker) return;
       sticker.x = clamp(crop.stickerDragStart.stickerX + point.x - crop.stickerDragStart.x, -sticker.width / 2, crop.image.naturalWidth - sticker.width / 2);
       sticker.y = clamp(crop.stickerDragStart.stickerY + point.y - crop.stickerDragStart.y, -sticker.height / 2, crop.image.naturalHeight - sticker.height / 2);
+      syncStickerAlignmentControls();
       drawCropCanvas();
       return;
     }
@@ -1467,6 +1536,20 @@ function bindCropperEvents() {
   canvas.addEventListener("pointerup", endCropPointer);
   canvas.addEventListener("pointercancel", endCropPointer);
   canvas.addEventListener("pointerleave", endCropPointer);
+
+  canvas.addEventListener("keydown", (event) => {
+    if (!isStickerMode(documentCrop.current?.mode)) return;
+    const direction = {
+      ArrowUp: [0, -1],
+      ArrowDown: [0, 1],
+      ArrowLeft: [-1, 0],
+      ArrowRight: [1, 0]
+    }[event.key];
+    if (!direction) return;
+    event.preventDefault();
+    const step = event.shiftKey ? 5 : getStickerNudgeStep();
+    moveSelectedSticker(direction[0] * step, direction[1] * step);
+  });
 
   document.querySelector("#cropRotateLeft")?.addEventListener("click", () => {
     if (!documentCrop.current) return;
@@ -1500,9 +1583,7 @@ function bindCropperEvents() {
   document.querySelector("#suggestedPencilColor")?.addEventListener("click", (event) => {
     setPencilColor(event.currentTarget.dataset.color, `Cor sugerida aplicada: ${cropPencilColor.toUpperCase()}`);
   });
-  document.querySelector("#stickerSize")?.addEventListener("input", (event) => {
-    resizeNumberSticker(Number(event.target.value));
-  });
+  bindStickerAlignmentEvents();
   document.querySelector("#addNumberSticker")?.addEventListener("click", addNumberSticker);
   document.querySelector("#addNumberZeroSticker")?.addEventListener("click", addNumberZeroSticker);
   document.querySelector("#undoBrushStroke")?.addEventListener("click", undoBrushStroke);
@@ -1519,10 +1600,11 @@ function syncFrontEditTools() {
   syncBrushUndoButton();
   if (note) {
     note.textContent = crop && crop.stepKey === "front"
-      ? "O primeiro recorte define o zoom das demais fotos. Os numeros 7 e 0 podem ser usados juntos; a borracha cobre tudo e Desfazer pode ser usado varias vezes."
+      ? "Selecione um adesivo para ajustar largura, altura e posicao com precisao. O primeiro recorte define o zoom das demais fotos."
       : "Arraste para centralizar. O primeiro recorte define o mesmo percentual de zoom para todas as fotos.";
   }
   setCropMode(crop && crop.stepKey === "front" ? crop.mode : "move");
+  syncStickerAlignmentControls();
 }
 
 function setCropMode(mode) {
@@ -1539,6 +1621,7 @@ function setCropMode(mode) {
         ? "crosshair"
         : "grab";
   }
+  syncStickerAlignmentControls();
   drawCropCanvas();
 }
 
@@ -1835,7 +1918,7 @@ function placeNumberStickerAt(centerX, centerY, templateKey = "number7") {
   const crop = documentCrop.current;
   const stickerImage = crop && crop.templateImages ? crop.templateImages[templateKey] : null;
   if (!crop || crop.stepKey !== "front" || !stickerImage) return;
-  const width = getStickerImageWidth(Number(document.querySelector("#stickerSize")?.value || 150));
+  const width = getStickerImageDimension(150);
   const height = width * (stickerImage.naturalHeight / stickerImage.naturalWidth);
   const sticker = {
     templateKey,
@@ -1847,31 +1930,140 @@ function placeNumberStickerAt(centerX, centerY, templateKey = "number7") {
   crop.stickers.push(sticker);
   crop.activeStickerIndex = crop.stickers.length - 1;
   setCropMode(templateKey === "number0" ? "sticker0" : "sticker7");
+  syncStickerAlignmentControls();
 }
 
-function resizeNumberSticker(width) {
+function getSelectedSticker(crop = documentCrop.current) {
+  if (!crop || !Array.isArray(crop.stickers)) return null;
+  return crop.stickers[crop.activeStickerIndex] || null;
+}
+
+function activateSelectedStickerMode() {
   const crop = documentCrop.current;
-  const sticker = crop && Array.isArray(crop.stickers) ? crop.stickers[crop.activeStickerIndex] : null;
-  const stickerImage = crop && sticker && crop.templateImages ? crop.templateImages[sticker.templateKey] : null;
-  if (!crop || !sticker || !stickerImage) return;
+  const sticker = getSelectedSticker(crop);
+  if (!crop || !sticker || isStickerMode(crop.mode)) return;
+  setCropMode(sticker.templateKey === "number0" ? "sticker0" : "sticker7");
+}
+
+function resizeNumberSticker(dimension, outputValue) {
+  const crop = documentCrop.current;
+  const sticker = getSelectedSticker(crop);
+  if (!crop || !sticker || !["width", "height"].includes(dimension)) return;
+  activateSelectedStickerMode();
   const centerX = sticker.x + sticker.width / 2;
   const centerY = sticker.y + sticker.height / 2;
-  const imageWidth = getStickerImageWidth(width);
-  const height = imageWidth * (stickerImage.naturalHeight / stickerImage.naturalWidth);
-  sticker.width = imageWidth;
-  sticker.height = height;
-  sticker.x = clamp(centerX - imageWidth / 2, -imageWidth / 2, crop.image.naturalWidth - imageWidth / 2);
-  sticker.y = clamp(centerY - height / 2, -height / 2, crop.image.naturalHeight - height / 2);
+  const imageValue = getStickerImageDimension(outputValue);
+  sticker[dimension] = imageValue;
+  sticker.x = clamp(centerX - sticker.width / 2, -sticker.width / 2, crop.image.naturalWidth - sticker.width / 2);
+  sticker.y = clamp(centerY - sticker.height / 2, -sticker.height / 2, crop.image.naturalHeight - sticker.height / 2);
+  syncStickerAlignmentControls();
   drawCropCanvas();
 }
 
-function getStickerImageWidth(outputWidth) {
+function getStickerOutputScale() {
   const crop = documentCrop.current;
   const canvas = document.querySelector("#cropCanvas");
-  if (!crop || !canvas) return outputWidth;
+  if (!crop || !canvas) return 1;
   const previewScale = canvas.width / documentCrop.width;
   const imageScale = getCropTransform(crop, canvas.width, canvas.height).scale;
-  return Math.max(1, (outputWidth * previewScale) / imageScale);
+  return imageScale / previewScale;
+}
+
+function getStickerImageDimension(outputValue) {
+  return Math.max(0.001, Number(outputValue) / getStickerOutputScale());
+}
+
+function getStickerOutputDimension(imageValue) {
+  return Math.max(0.1, Number(imageValue) * getStickerOutputScale());
+}
+
+function formatStickerValue(value) {
+  return Number(Number(value).toFixed(1)).toString();
+}
+
+function syncStickerAlignmentControls() {
+  const crop = documentCrop.current;
+  const sticker = getSelectedSticker(crop);
+  const label = document.querySelector("#selectedStickerLabel");
+  document.querySelectorAll("[data-sticker-control]").forEach((control) => {
+    control.disabled = !sticker;
+  });
+  if (label) {
+    label.textContent = sticker
+      ? `${sticker.templateKey === "number0" ? "Numero 0" : "Numero 7"} selecionado`
+      : "Nenhum adesivo selecionado";
+  }
+  if (!crop || !sticker) return;
+
+  const values = {
+    stickerWidth: getStickerOutputDimension(sticker.width),
+    stickerWidthValue: getStickerOutputDimension(sticker.width),
+    stickerHeight: getStickerOutputDimension(sticker.height),
+    stickerHeightValue: getStickerOutputDimension(sticker.height),
+    stickerPositionX: sticker.x + sticker.width / 2,
+    stickerPositionY: sticker.y + sticker.height / 2
+  };
+  Object.entries(values).forEach(([id, value]) => {
+    const input = document.querySelector(`#${id}`);
+    if (input) input.value = formatStickerValue(value);
+  });
+  const opacity = Math.round(clamp(Number(crop.stickerPreviewOpacity) || 0.55, 0.15, 1) * 100);
+  const opacityInput = document.querySelector("#stickerPreviewOpacity");
+  const opacityValue = document.querySelector("#stickerPreviewOpacityValue");
+  if (opacityInput) opacityInput.value = String(opacity);
+  if (opacityValue) opacityValue.textContent = `${opacity}%`;
+}
+
+function setSelectedStickerPosition(axis, centerValue) {
+  const crop = documentCrop.current;
+  const sticker = getSelectedSticker(crop);
+  const value = Number(centerValue);
+  if (!crop || !sticker || !Number.isFinite(value)) return;
+  activateSelectedStickerMode();
+  if (axis === "x") sticker.x = clamp(value - sticker.width / 2, -sticker.width / 2, crop.image.naturalWidth - sticker.width / 2);
+  if (axis === "y") sticker.y = clamp(value - sticker.height / 2, -sticker.height / 2, crop.image.naturalHeight - sticker.height / 2);
+  syncStickerAlignmentControls();
+  drawCropCanvas();
+}
+
+function moveSelectedSticker(deltaX, deltaY) {
+  const crop = documentCrop.current;
+  const sticker = getSelectedSticker(crop);
+  if (!crop || !sticker) return;
+  activateSelectedStickerMode();
+  const outputScale = getStickerOutputScale();
+  sticker.x = clamp(sticker.x + deltaX / outputScale, -sticker.width / 2, crop.image.naturalWidth - sticker.width / 2);
+  sticker.y = clamp(sticker.y + deltaY / outputScale, -sticker.height / 2, crop.image.naturalHeight - sticker.height / 2);
+  syncStickerAlignmentControls();
+  drawCropCanvas();
+}
+
+function getStickerNudgeStep() {
+  return Number(document.querySelector("#stickerNudgeStep")?.value) || 0.5;
+}
+
+function bindStickerAlignmentEvents() {
+  [["stickerWidth", "width"], ["stickerWidthValue", "width"], ["stickerHeight", "height"], ["stickerHeightValue", "height"]]
+    .forEach(([id, dimension]) => {
+      document.querySelector(`#${id}`)?.addEventListener("input", (event) => resizeNumberSticker(dimension, Number(event.target.value)));
+    });
+  document.querySelector("#stickerPositionX")?.addEventListener("input", (event) => setSelectedStickerPosition("x", event.target.value));
+  document.querySelector("#stickerPositionY")?.addEventListener("input", (event) => setSelectedStickerPosition("y", event.target.value));
+  document.querySelectorAll("[data-sticker-nudge]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const [x, y] = button.dataset.stickerNudge.split(",").map(Number);
+      const step = getStickerNudgeStep();
+      moveSelectedSticker(x * step, y * step);
+    });
+  });
+  document.querySelector("#stickerPreviewOpacity")?.addEventListener("input", (event) => {
+    const crop = documentCrop.current;
+    if (!crop || !getSelectedSticker(crop)) return;
+    activateSelectedStickerMode();
+    crop.stickerPreviewOpacity = clamp(Number(event.target.value) / 100, 0.15, 1);
+    syncStickerAlignmentControls();
+    drawCropCanvas();
+  });
 }
 
 async function renderStoredPhotoEdit(stepKey, edit) {

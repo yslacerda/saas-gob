@@ -976,6 +976,87 @@ select:focus {
   display: none;
 }
 
+.sticker-align-panel {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #c7dcfa;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.sticker-align-heading {
+  display: grid;
+  gap: 2px;
+}
+
+.sticker-align-heading strong {
+  color: var(--gov-blue-dark);
+  font-size: 13px;
+}
+
+.sticker-align-heading span,
+.sticker-align-panel small {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.sticker-value-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px;
+  align-items: center;
+  gap: 8px;
+}
+
+.sticker-value-row input[type="number"],
+.sticker-position-grid input,
+.sticker-nudge-controls select {
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 8px;
+  border: 1px solid #b8cbe2;
+  border-radius: 7px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+}
+
+.sticker-position-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sticker-nudge-controls {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.7fr) minmax(0, 1.3fr);
+  align-items: end;
+  gap: 8px;
+}
+
+.sticker-nudge-pad {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.sticker-nudge-pad button {
+  min-width: 0;
+  min-height: 38px;
+  padding: 4px;
+  border: 1px solid #9eb9d8;
+  border-radius: 7px;
+  color: var(--gov-blue-dark);
+  background: #edf5ff;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.sticker-align-panel :disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .pencil-color-panel {
   display: grid;
   gap: 8px;
@@ -2076,6 +2157,14 @@ select:focus {
 
   .front-edit-tools {
     gap: 12px;
+  }
+
+  .sticker-value-row {
+    grid-template-columns: minmax(0, 1fr) 82px;
+  }
+
+  .sticker-nudge-pad button {
+    min-height: 44px;
   }
 
   .crop-tool-tabs {
