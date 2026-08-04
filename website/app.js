@@ -455,6 +455,7 @@ async function renderDashboardPage() {
                 <button class="active" type="button" data-crop-mode="move">Mover</button>
                 <button type="button" data-crop-mode="erase">Borracha</button>
                 <button type="button" data-crop-mode="pencil">Lapis</button>
+                <button type="button" data-crop-mode="eyedropper">Conta-gotas</button>
                 <button type="button" data-crop-mode="sticker7">Numero 7</button>
                 <button type="button" data-crop-mode="sticker0">Numero 0</button>
               </div>
@@ -467,6 +468,18 @@ async function renderDashboardPage() {
                 <span>Tamanho do lapis</span>
                 <input id="pencilSize" type="range" min="1" max="120" step="1" value="18" />
               </label>
+              <div class="pencil-color-panel">
+                <span class="pencil-color-title">Cor do lapis</span>
+                <div class="pencil-color-inputs">
+                  <input id="pencilColor" type="color" value="${cropPencilColor}" aria-label="Selecionar cor do lapis" />
+                  <input id="pencilColorHex" type="text" value="${cropPencilColor.toUpperCase()}" maxlength="7" spellcheck="false" inputmode="text" aria-label="Cor hexadecimal do lapis" />
+                </div>
+                <button class="pencil-color-suggestion" type="button" id="suggestedPencilColor" data-color="${cropPencilColor}">
+                  <span class="pencil-color-swatch" style="--suggested-color: ${cropPencilColor}"></span>
+                  Sugestao: ${cropPencilColor.toUpperCase()}
+                </button>
+                <small id="pencilColorStatus" aria-live="polite">Use o conta-gotas para copiar exatamente um pixel da foto.</small>
+              </div>
               <div class="crop-actions-row">
                 <button class="secondary-btn" type="button" id="addNumberSticker">Adicionar 7</button>
                 <button class="secondary-btn" type="button" id="addNumberZeroSticker">Adicionar 0</button>
@@ -956,6 +969,7 @@ function createLegacyPhotoEditState(source) {
     offsetY: 0,
     eraserSize: 18,
     pencilSize: 18,
+    pencilColor: cropPencilColor,
     stickers: [],
     brushHistory: []
   };
@@ -997,6 +1011,7 @@ async function openCropper(stepKey, file = null, statusElement = null, savedEdit
   const eraseCanvas = isFront ? document.createElement("canvas") : null;
   const eraseFillCanvas = isFront ? document.createElement("canvas") : null;
   const paintCanvas = isFront ? document.createElement("canvas") : null;
+  const sampleCanvas = isFront ? document.createElement("canvas") : null;
   const templateImages = isFront
     ? {
       number7: await loadImage(cropTemplateAssets.number7),
@@ -1016,6 +1031,11 @@ async function openCropper(stepKey, file = null, statusElement = null, savedEdit
     paintCanvas.width = image.naturalWidth;
     paintCanvas.height = image.naturalHeight;
   }
+  if (sampleCanvas) {
+    sampleCanvas.width = image.naturalWidth;
+    sampleCanvas.height = image.naturalHeight;
+    sampleCanvas.getContext("2d", { willReadFrequently: true }).drawImage(image, 0, 0);
+  }
   const restoredEdit = savedEdit || createLegacyPhotoEditState(source);
   const sharedZoom = state.standardCropZoom;
   const restoredStickers = Array.isArray(restoredEdit.stickers)
@@ -1032,9 +1052,11 @@ async function openCropper(stepKey, file = null, statusElement = null, savedEdit
     eraseFillCanvas,
     eraseFillDirty: true,
     paintCanvas,
+    sampleCanvas,
     mode: "move",
     eraserSize: Number(restoredEdit.eraserSize) || 18,
     pencilSize: Number(restoredEdit.pencilSize) || 18,
+    pencilColor: normalizePencilColor(restoredEdit.pencilColor) || cropPencilColor,
     stickers: restoredStickers,
     activeStickerIndex: restoredStickers.length - 1,
     rotation: Number(restoredEdit.rotation) || 0,
@@ -1068,6 +1090,7 @@ async function openCropper(stepKey, file = null, statusElement = null, savedEdit
   const pencilInput = document.querySelector("#pencilSize");
   if (eraserInput) eraserInput.value = String(documentCrop.current.eraserSize);
   if (pencilInput) pencilInput.value = String(documentCrop.current.pencilSize);
+  syncPencilColorControls();
   if (modal) {
     modal.hidden = false;
     setModalScrollLock(true);
@@ -1300,6 +1323,7 @@ function applyCropperResult() {
     offsetY: crop.offsetY,
     eraserSize: crop.eraserSize,
     pencilSize: crop.pencilSize,
+    pencilColor: crop.pencilColor,
     stickers: clonePhotoEditState(crop.stickers) || [],
     brushHistory: clonePhotoEditState(crop.brushHistory) || []
   };
@@ -1335,6 +1359,12 @@ function bindCropperEvents() {
       resetCropPointerActions(crop);
       crop.pinchStartDistance = getActivePointerDistance(crop);
       crop.pinchStartZoom = crop.zoom;
+      return;
+    }
+
+    if (crop.stepKey === "front" && crop.mode === "eyedropper") {
+      const point = getImagePoint(event);
+      if (point) samplePencilColorAt(point);
       return;
     }
 
@@ -1462,6 +1492,19 @@ function bindCropperEvents() {
     if (!documentCrop.current) return;
     documentCrop.current.pencilSize = Number(event.target.value);
   });
+  document.querySelector("#pencilColor")?.addEventListener("input", (event) => {
+    setPencilColor(event.target.value);
+  });
+  const pencilColorHex = document.querySelector("#pencilColorHex");
+  pencilColorHex?.addEventListener("input", (event) => {
+    const normalized = normalizePencilColor(event.target.value);
+    event.target.classList.toggle("invalid", !normalized);
+    if (normalized) setPencilColor(normalized);
+  });
+  pencilColorHex?.addEventListener("change", () => syncPencilColorControls());
+  document.querySelector("#suggestedPencilColor")?.addEventListener("click", (event) => {
+    setPencilColor(event.currentTarget.dataset.color, `Cor sugerida aplicada: ${cropPencilColor.toUpperCase()}`);
+  });
   document.querySelector("#stickerSize")?.addEventListener("input", (event) => {
     resizeNumberSticker(Number(event.target.value));
   });
@@ -1493,7 +1536,61 @@ function setCropMode(mode) {
   document.querySelectorAll("[data-crop-mode]").forEach((button) => {
     button.classList.toggle("active", button.dataset.cropMode === (crop ? crop.mode : "move"));
   });
+  const canvas = document.querySelector("#cropCanvas");
+  if (canvas) {
+    canvas.style.cursor = crop && crop.mode === "eyedropper"
+      ? "crosshair"
+      : crop && (crop.mode === "pencil" || crop.mode === "erase")
+        ? "crosshair"
+        : "grab";
+  }
   drawCropCanvas();
+}
+
+function normalizePencilColor(value) {
+  const raw = String(value || "").trim();
+  const withHash = raw.startsWith("#") ? raw : `#${raw}`;
+  if (/^#[0-9a-f]{6}$/i.test(withHash)) return withHash.toLowerCase();
+  if (/^#[0-9a-f]{3}$/i.test(withHash)) {
+    return `#${withHash[1]}${withHash[1]}${withHash[2]}${withHash[2]}${withHash[3]}${withHash[3]}`.toLowerCase();
+  }
+  return null;
+}
+
+function syncPencilColorControls(statusText = "") {
+  const crop = documentCrop.current;
+  if (!crop) return;
+  const color = normalizePencilColor(crop.pencilColor) || cropPencilColor;
+  crop.pencilColor = color;
+  const picker = document.querySelector("#pencilColor");
+  const hex = document.querySelector("#pencilColorHex");
+  const status = document.querySelector("#pencilColorStatus");
+  if (picker) picker.value = color;
+  if (hex) {
+    hex.value = color.toUpperCase();
+    hex.classList.remove("invalid");
+  }
+  if (status) status.textContent = statusText || `Cor atual: ${color.toUpperCase()}`;
+}
+
+function setPencilColor(value, statusText = "") {
+  const crop = documentCrop.current;
+  const color = normalizePencilColor(value);
+  if (!crop || !color) return false;
+  crop.pencilColor = color;
+  syncPencilColorControls(statusText);
+  return true;
+}
+
+function samplePencilColorAt(point) {
+  const crop = documentCrop.current;
+  if (!crop || !crop.sampleCanvas || !point) return;
+  const x = clamp(Math.floor(point.x), 0, crop.sampleCanvas.width - 1);
+  const y = clamp(Math.floor(point.y), 0, crop.sampleCanvas.height - 1);
+  const pixel = crop.sampleCanvas.getContext("2d", { willReadFrequently: true }).getImageData(x, y, 1, 1).data;
+  const color = `#${[pixel[0], pixel[1], pixel[2]].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+  setPencilColor(color, `Pixel (${x}, ${y}): ${color.toUpperCase()}`);
+  setCropMode("pencil");
 }
 
 function syncBrushUndoButton() {
@@ -1559,7 +1656,11 @@ function startBrushStroke(tool) {
   const crop = documentCrop.current;
   if (!crop) return;
   if (crop.brushHistory.length >= 500) crop.brushHistory.shift();
-  crop.activeBrushStroke = { tool, points: [] };
+  crop.activeBrushStroke = {
+    tool,
+    color: tool === "pencil" ? crop.pencilColor : null,
+    points: []
+  };
   crop.brushHistory.push(crop.activeBrushStroke);
   syncBrushUndoButton();
 }
@@ -1585,7 +1686,7 @@ function rebuildBrushCanvases(crop) {
   for (const stroke of crop.brushHistory || []) {
     crop.brushLastPoint = null;
     for (const point of stroke.points || []) {
-      drawBrushAtImagePoint(point, stroke.tool, false);
+      drawBrushAtImagePoint(point, stroke.tool, false, stroke.color);
     }
   }
   crop.brushLastPoint = null;
@@ -1629,7 +1730,7 @@ function drawOnePixelLine(context, previous, point) {
   }
 }
 
-function drawBrushAtImagePoint(point, tool, recordPoint = true) {
+function drawBrushAtImagePoint(point, tool, recordPoint = true, strokeColor = null) {
   const crop = documentCrop.current;
   if (!crop) return;
 
@@ -1641,7 +1742,8 @@ function drawBrushAtImagePoint(point, tool, recordPoint = true) {
   const previous = crop.brushLastPoint;
 
   context.save();
-  context.fillStyle = tool === "erase" ? "#000" : cropPencilColor;
+  const pencilColor = normalizePencilColor(strokeColor || crop.activeBrushStroke?.color || crop.pencilColor) || cropPencilColor;
+  context.fillStyle = tool === "erase" ? "#000" : pencilColor;
   context.strokeStyle = context.fillStyle;
   context.lineCap = "round";
   context.lineJoin = "round";
@@ -1810,6 +1912,7 @@ async function renderStoredPhotoEdit(stepKey, edit) {
     mode: "move",
     eraserSize: Number(edit.eraserSize) || 18,
     pencilSize: Number(edit.pencilSize) || 18,
+    pencilColor: normalizePencilColor(edit.pencilColor) || cropPencilColor,
     stickers: storedStickers,
     activeStickerIndex: storedStickers.length - 1,
     rotation: Number(edit.rotation) || 0,

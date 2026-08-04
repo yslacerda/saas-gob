@@ -976,6 +976,82 @@ select:focus {
   display: none;
 }
 
+.pencil-color-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #c7dcfa;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.pencil-color-title {
+  color: var(--gov-blue-dark);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.pencil-color-inputs {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.pencil-color-inputs input[type="color"] {
+  width: 54px;
+  height: 44px;
+  padding: 3px;
+  border: 1px solid #8fa9c7;
+  border-radius: 7px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.pencil-color-inputs input[type="text"] {
+  min-width: 0;
+  height: 44px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pencil-color-inputs input.invalid {
+  border-color: var(--danger);
+  outline-color: var(--danger);
+}
+
+.pencil-color-suggestion {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid #b8cbe2;
+  border-radius: 7px;
+  color: var(--gov-blue-dark);
+  background: #f7fbff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.pencil-color-swatch {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  border: 1px solid rgba(0, 0, 0, 0.28);
+  border-radius: 5px;
+  background: var(--suggested-color);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+
+#pencilColorStatus {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .crop-tool-tabs {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
