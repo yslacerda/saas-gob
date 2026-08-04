@@ -491,18 +491,8 @@ async function renderDashboardPage() {
                   <span id="selectedStickerLabel">Nenhum adesivo selecionado</span>
                 </div>
                 <label>
-                  <span>Largura</span>
-                  <div class="sticker-value-row">
-                    <input id="stickerWidth" data-sticker-control type="range" min="1" max="600" step="0.1" value="150" disabled />
-                    <input id="stickerWidthValue" data-sticker-control type="number" min="1" max="600" step="0.1" value="150" inputmode="decimal" aria-label="Largura do adesivo" disabled />
-                  </div>
-                </label>
-                <label>
-                  <span>Altura</span>
-                  <div class="sticker-value-row">
-                    <input id="stickerHeight" data-sticker-control type="range" min="1" max="600" step="0.1" value="150" disabled />
-                    <input id="stickerHeightValue" data-sticker-control type="number" min="1" max="600" step="0.1" value="150" inputmode="decimal" aria-label="Altura do adesivo" disabled />
-                  </div>
+                  <span>Tamanho do adesivo</span>
+                  <input id="stickerSize" data-sticker-control type="range" min="40" max="360" step="1" value="150" disabled />
                 </label>
                 <div class="sticker-position-grid">
                   <label>
@@ -1600,7 +1590,7 @@ function syncFrontEditTools() {
   syncBrushUndoButton();
   if (note) {
     note.textContent = crop && crop.stepKey === "front"
-      ? "Selecione um adesivo para ajustar largura, altura e posicao com precisao. O primeiro recorte define o zoom das demais fotos."
+      ? "Selecione um adesivo para ajustar tamanho e posicao com precisao. O primeiro recorte define o zoom das demais fotos."
       : "Arraste para centralizar. O primeiro recorte define o mesmo percentual de zoom para todas as fotos.";
   }
   setCropMode(crop && crop.stepKey === "front" ? crop.mode : "move");
@@ -1945,15 +1935,18 @@ function activateSelectedStickerMode() {
   setCropMode(sticker.templateKey === "number0" ? "sticker0" : "sticker7");
 }
 
-function resizeNumberSticker(dimension, outputValue) {
+function resizeNumberSticker(outputWidth) {
   const crop = documentCrop.current;
   const sticker = getSelectedSticker(crop);
-  if (!crop || !sticker || !["width", "height"].includes(dimension)) return;
+  const stickerImage = crop && sticker && crop.templateImages ? crop.templateImages[sticker.templateKey] : null;
+  if (!crop || !sticker || !stickerImage) return;
   activateSelectedStickerMode();
   const centerX = sticker.x + sticker.width / 2;
   const centerY = sticker.y + sticker.height / 2;
-  const imageValue = getStickerImageDimension(outputValue);
-  sticker[dimension] = imageValue;
+  const imageWidth = getStickerImageDimension(outputWidth);
+  const imageHeight = imageWidth * (stickerImage.naturalHeight / stickerImage.naturalWidth);
+  sticker.width = imageWidth;
+  sticker.height = imageHeight;
   sticker.x = clamp(centerX - sticker.width / 2, -sticker.width / 2, crop.image.naturalWidth - sticker.width / 2);
   sticker.y = clamp(centerY - sticker.height / 2, -sticker.height / 2, crop.image.naturalHeight - sticker.height / 2);
   syncStickerAlignmentControls();
@@ -1996,10 +1989,7 @@ function syncStickerAlignmentControls() {
   if (!crop || !sticker) return;
 
   const values = {
-    stickerWidth: getStickerOutputDimension(sticker.width),
-    stickerWidthValue: getStickerOutputDimension(sticker.width),
-    stickerHeight: getStickerOutputDimension(sticker.height),
-    stickerHeightValue: getStickerOutputDimension(sticker.height),
+    stickerSize: getStickerOutputDimension(sticker.width),
     stickerPositionX: sticker.x + sticker.width / 2,
     stickerPositionY: sticker.y + sticker.height / 2
   };
@@ -2043,10 +2033,7 @@ function getStickerNudgeStep() {
 }
 
 function bindStickerAlignmentEvents() {
-  [["stickerWidth", "width"], ["stickerWidthValue", "width"], ["stickerHeight", "height"], ["stickerHeightValue", "height"]]
-    .forEach(([id, dimension]) => {
-      document.querySelector(`#${id}`)?.addEventListener("input", (event) => resizeNumberSticker(dimension, Number(event.target.value)));
-    });
+  document.querySelector("#stickerSize")?.addEventListener("input", (event) => resizeNumberSticker(Number(event.target.value)));
   document.querySelector("#stickerPositionX")?.addEventListener("input", (event) => setSelectedStickerPosition("x", event.target.value));
   document.querySelector("#stickerPositionY")?.addEventListener("input", (event) => setSelectedStickerPosition("y", event.target.value));
   document.querySelectorAll("[data-sticker-nudge]").forEach((button) => {

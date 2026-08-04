@@ -1001,14 +1001,6 @@ select:focus {
   font-size: 11px;
 }
 
-.sticker-value-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 72px;
-  align-items: center;
-  gap: 8px;
-}
-
-.sticker-value-row input[type="number"],
 .sticker-position-grid input,
 .sticker-nudge-controls select {
   width: 100%;
@@ -2157,10 +2149,6 @@ select:focus {
 
   .front-edit-tools {
     gap: 12px;
-  }
-
-  .sticker-value-row {
-    grid-template-columns: minmax(0, 1fr) 82px;
   }
 
   .sticker-nudge-pad button {
