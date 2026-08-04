@@ -1074,6 +1074,8 @@ async function openCropper(stepKey, file = null, statusElement = null, savedEdit
     activePointers: new Map(),
     pinchStartDistance: 0,
     pinchStartZoom: 1,
+    pinchStartPointers: null,
+    pinchActive: false,
     renderFrame: 0,
     statusElement
   };
@@ -1254,9 +1256,52 @@ function getPreviewScale() {
 }
 
 function getActivePointerDistance(crop) {
-  if (!crop || !crop.activePointers || crop.activePointers.size < 2) return 0;
-  const points = Array.from(crop.activePointers.values());
+  const points = getActiveTouchPoints(crop);
+  if (points.length < 2) return 0;
   return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+}
+
+function getActiveTouchPoints(crop) {
+  if (!crop || !crop.activePointers || crop.activePointers.size < 2) return [];
+  return Array.from(crop.activePointers.values())
+    .filter((point) => point.pointerType === "touch")
+    .slice(0, 2);
+}
+
+function beginCropPinchCandidate(crop) {
+  const points = getActiveTouchPoints(crop);
+  if (points.length !== 2) return false;
+  const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+  if (distance < 24) return false;
+  crop.pinchStartPointers = points.map((point) => ({ x: point.x, y: point.y }));
+  crop.pinchStartDistance = distance;
+  crop.pinchStartZoom = crop.zoom;
+  crop.pinchActive = false;
+  return true;
+}
+
+function shouldActivateCropPinch(crop) {
+  const points = getActiveTouchPoints(crop);
+  const startPoints = crop && crop.pinchStartPointers;
+  if (points.length !== 2 || !Array.isArray(startPoints) || startPoints.length !== 2) return false;
+
+  const startDistance = crop.pinchStartDistance;
+  const currentDistance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+  if (startDistance <= 0 || Math.abs(currentDistance - startDistance) < 10) return false;
+
+  const axisX = (startPoints[1].x - startPoints[0].x) / startDistance;
+  const axisY = (startPoints[1].y - startPoints[0].y) / startDistance;
+  const moveOneX = points[0].x - startPoints[0].x;
+  const moveOneY = points[0].y - startPoints[0].y;
+  const moveTwoX = points[1].x - startPoints[1].x;
+  const moveTwoY = points[1].y - startPoints[1].y;
+  const relativeMotion = (moveTwoX - moveOneX) * axisX + (moveTwoY - moveOneY) * axisY;
+
+  if (Math.abs(relativeMotion) < 10) return false;
+  crop.pinchActive = true;
+  crop.pinchStartDistance = currentDistance;
+  crop.pinchStartZoom = crop.zoom;
+  return true;
 }
 
 function resetCropPointerActions(crop) {
@@ -1270,7 +1315,7 @@ function resetCropPointerActions(crop) {
 }
 
 function applyCropPinchZoom(crop, zoomInput) {
-  if (!crop || !zoomInput || crop.pinchStartDistance <= 0) return;
+  if (!crop || !zoomInput || !crop.pinchActive || crop.pinchStartDistance <= 0) return;
   const distance = getActivePointerDistance(crop);
   if (distance <= 0) return;
 
@@ -1354,12 +1399,11 @@ function bindCropperEvents() {
     if (!crop) return;
     event.preventDefault();
     canvas.setPointerCapture(event.pointerId);
-    crop.activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    crop.activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY, pointerType: event.pointerType });
 
     if (crop.activePointers.size >= 2) {
       resetCropPointerActions(crop);
-      crop.pinchStartDistance = getActivePointerDistance(crop);
-      crop.pinchStartZoom = crop.zoom;
+      beginCropPinchCandidate(crop);
       return;
     }
 
@@ -1419,11 +1463,16 @@ function bindCropperEvents() {
     if (!crop) return;
     event.preventDefault();
     if (crop.activePointers && crop.activePointers.has(event.pointerId)) {
-      crop.activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      const activePointer = crop.activePointers.get(event.pointerId);
+      crop.activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY, pointerType: activePointer.pointerType });
     }
 
     if (crop.activePointers && crop.activePointers.size >= 2) {
-      applyCropPinchZoom(crop, zoomInput);
+      if (!crop.pinchActive) {
+        shouldActivateCropPinch(crop);
+      } else {
+        applyCropPinchZoom(crop, zoomInput);
+      }
       return;
     }
 
@@ -1461,12 +1510,13 @@ function bindCropperEvents() {
     if (crop.activePointers) crop.activePointers.delete(event.pointerId);
     crop.pinchStartDistance = 0;
     crop.pinchStartZoom = crop.zoom;
+    crop.pinchStartPointers = null;
+    crop.pinchActive = false;
     resetCropPointerActions(crop);
   }
 
   canvas.addEventListener("pointerup", endCropPointer);
   canvas.addEventListener("pointercancel", endCropPointer);
-  canvas.addEventListener("pointerleave", endCropPointer);
 
   document.querySelector("#cropRotateLeft")?.addEventListener("click", () => {
     if (!documentCrop.current) return;
