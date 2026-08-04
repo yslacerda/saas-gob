@@ -1530,6 +1530,8 @@ function getImagePointFromCanvasPoint(point) {
   if (!crop || !canvas) return null;
 
   const { scale, offsetScale } = getCropTransform(crop, canvas.width, canvas.height);
+  const previewScale = canvas.width / documentCrop.width;
+  const pencilPixelSize = Math.max(1, Math.round((crop.pencilSize * previewScale) / scale));
   const centerX = canvas.width / 2 + crop.offsetX * offsetScale;
   const centerY = canvas.height / 2 + crop.offsetY * offsetScale;
   const dx = point.x - centerX;
@@ -1541,8 +1543,9 @@ function getImagePointFromCanvasPoint(point) {
   return {
     x: rotatedX / scale + crop.image.naturalWidth / 2,
     y: rotatedY / scale + crop.image.naturalHeight / 2,
-    eraseRadius: Math.max(0.5, (crop.eraserSize * (canvas.width / documentCrop.width)) / 2 / scale),
-    pencilRadius: Math.max(0.5, (crop.pencilSize * (canvas.width / documentCrop.width)) / 2 / scale)
+    eraseRadius: Math.max(0.5, (crop.eraserSize * previewScale) / 2 / scale),
+    pencilRadius: pencilPixelSize / 2,
+    pencilPixelSize
   };
 }
 
@@ -1600,6 +1603,32 @@ function applyBrushFromPointerEvent(event, tool) {
   requestCropCanvasDraw();
 }
 
+function drawOnePixelLine(context, previous, point) {
+  let x = Math.floor(previous ? previous.x : point.x);
+  let y = Math.floor(previous ? previous.y : point.y);
+  const endX = Math.floor(point.x);
+  const endY = Math.floor(point.y);
+  const deltaX = Math.abs(endX - x);
+  const deltaY = Math.abs(endY - y);
+  const stepX = x < endX ? 1 : -1;
+  const stepY = y < endY ? 1 : -1;
+  let error = deltaX - deltaY;
+
+  while (true) {
+    context.fillRect(x, y, 1, 1);
+    if (x === endX && y === endY) break;
+    const doubledError = error * 2;
+    if (doubledError > -deltaY) {
+      error -= deltaY;
+      x += stepX;
+    }
+    if (doubledError < deltaX) {
+      error += deltaX;
+      y += stepY;
+    }
+  }
+}
+
 function drawBrushAtImagePoint(point, tool, recordPoint = true) {
   const crop = documentCrop.current;
   if (!crop) return;
@@ -1618,7 +1647,10 @@ function drawBrushAtImagePoint(point, tool, recordPoint = true) {
   context.lineJoin = "round";
   context.lineWidth = radius * 2;
 
-  if (previous && previous.tool === tool) {
+  const isOnePixelPencil = tool === "pencil" && (point.pencilPixelSize === 1 || radius <= 0.5);
+  if (isOnePixelPencil) {
+    drawOnePixelLine(context, previous && previous.tool === tool ? previous : null, point);
+  } else if (previous && previous.tool === tool) {
     const distance = Math.hypot(point.x - previous.x, point.y - previous.y);
     const steps = Math.max(1, Math.ceil(distance / Math.max(radius * 0.7, 1)));
     context.beginPath();
@@ -1644,7 +1676,8 @@ function drawBrushAtImagePoint(point, tool, recordPoint = true) {
       x: point.x,
       y: point.y,
       eraseRadius: point.eraseRadius,
-      pencilRadius: point.pencilRadius
+      pencilRadius: point.pencilRadius,
+      pencilPixelSize: point.pencilPixelSize
     });
   }
   if (tool === "erase") {
