@@ -469,16 +469,17 @@ async function renderDashboardPage() {
                 <input id="pencilSize" type="range" min="1" max="120" step="1" value="18" />
               </label>
               <div class="pencil-color-panel">
-                <span class="pencil-color-title">Cor do lapis</span>
-                <div class="pencil-color-inputs">
-                  <input id="pencilColor" type="color" value="${cropPencilColor}" aria-label="Selecionar cor do lapis" />
-                  <input id="pencilColorHex" type="text" value="${cropPencilColor.toUpperCase()}" maxlength="7" spellcheck="false" inputmode="text" aria-label="Cor hexadecimal do lapis" />
+                <span class="pencil-color-title">Cor extraida da foto</span>
+                <div class="pencil-color-current" aria-live="polite">
+                  <span class="pencil-color-current-swatch" id="pencilColorCurrentSwatch" style="--current-pencil-color: ${cropPencilColor}"></span>
+                  <output id="pencilColorHex" aria-label="Cor hexadecimal extraida">${cropPencilColor.toUpperCase()}</output>
                 </div>
+                <button class="secondary-btn pencil-pick-button" type="button" id="selectPencilPixelColor">Selecionar pixel na imagem</button>
                 <button class="pencil-color-suggestion" type="button" id="suggestedPencilColor" data-color="${cropPencilColor}">
                   <span class="pencil-color-swatch" style="--suggested-color: ${cropPencilColor}"></span>
-                  Sugestao: ${cropPencilColor.toUpperCase()}
+                  Usar sugestao: ${cropPencilColor.toUpperCase()}
                 </button>
-                <small id="pencilColorStatus" aria-live="polite">Use o conta-gotas para copiar exatamente um pixel da foto.</small>
+                <small id="pencilColorStatus" aria-live="polite">Amplie a foto, selecione o conta-gotas e toque no pixel cuja cor deseja copiar.</small>
               </div>
               <div class="crop-actions-row">
                 <button class="secondary-btn" type="button" id="addNumberSticker">Adicionar 7</button>
@@ -1492,16 +1493,10 @@ function bindCropperEvents() {
     if (!documentCrop.current) return;
     documentCrop.current.pencilSize = Number(event.target.value);
   });
-  document.querySelector("#pencilColor")?.addEventListener("input", (event) => {
-    setPencilColor(event.target.value);
+  document.querySelector("#selectPencilPixelColor")?.addEventListener("click", () => {
+    setCropMode("eyedropper");
+    syncPencilColorControls("Conta-gotas ativo: toque em um pixel exato da foto.");
   });
-  const pencilColorHex = document.querySelector("#pencilColorHex");
-  pencilColorHex?.addEventListener("input", (event) => {
-    const normalized = normalizePencilColor(event.target.value);
-    event.target.classList.toggle("invalid", !normalized);
-    if (normalized) setPencilColor(normalized);
-  });
-  pencilColorHex?.addEventListener("change", () => syncPencilColorControls());
   document.querySelector("#suggestedPencilColor")?.addEventListener("click", (event) => {
     setPencilColor(event.currentTarget.dataset.color, `Cor sugerida aplicada: ${cropPencilColor.toUpperCase()}`);
   });
@@ -1562,14 +1557,11 @@ function syncPencilColorControls(statusText = "") {
   if (!crop) return;
   const color = normalizePencilColor(crop.pencilColor) || cropPencilColor;
   crop.pencilColor = color;
-  const picker = document.querySelector("#pencilColor");
   const hex = document.querySelector("#pencilColorHex");
+  const swatch = document.querySelector("#pencilColorCurrentSwatch");
   const status = document.querySelector("#pencilColorStatus");
-  if (picker) picker.value = color;
-  if (hex) {
-    hex.value = color.toUpperCase();
-    hex.classList.remove("invalid");
-  }
+  if (hex) hex.textContent = color.toUpperCase();
+  if (swatch) swatch.style.setProperty("--current-pencil-color", color);
   if (status) status.textContent = statusText || `Cor atual: ${color.toUpperCase()}`;
 }
 
