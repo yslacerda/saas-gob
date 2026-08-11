@@ -1049,6 +1049,11 @@ select:focus {
   opacity: 0.48;
 }
 
+.sticker-delete-button {
+  width: 100%;
+  min-height: 42px;
+}
+
 .pencil-color-panel {
   display: grid;
   gap: 8px;

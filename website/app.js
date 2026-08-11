@@ -527,6 +527,7 @@ async function renderDashboardPage() {
                   <input id="stickerPreviewOpacity" data-sticker-control type="range" min="15" max="100" step="1" value="55" disabled />
                 </label>
                 <small>A transparencia vale apenas na previa. Ao aplicar, o adesivo fica 100% opaco.</small>
+                <button class="danger-btn sticker-delete-button" type="button" id="deleteSelectedSticker" data-sticker-control disabled>Apagar somente este adesivo</button>
               </div>
             </div>
             <p class="form-note">Arraste a imagem dentro do quadro para centralizar antes de aplicar.</p>
@@ -2028,12 +2029,34 @@ function moveSelectedSticker(deltaX, deltaY) {
   drawCropCanvas();
 }
 
+function deleteSelectedSticker() {
+  const crop = documentCrop.current;
+  const sticker = getSelectedSticker(crop);
+  if (!crop || !sticker) return false;
+
+  crop.stickers.splice(crop.activeStickerIndex, 1);
+  crop.activeStickerIndex = Math.min(crop.activeStickerIndex, crop.stickers.length - 1);
+  crop.stickerDragStart = null;
+
+  const nextSticker = getSelectedSticker(crop);
+  if (nextSticker) {
+    crop.mode = nextSticker.templateKey === "number0" ? "sticker0" : "sticker7";
+    setCropMode(crop.mode);
+  } else {
+    setCropMode("move");
+  }
+  syncStickerAlignmentControls();
+  drawCropCanvas();
+  return true;
+}
+
 function getStickerNudgeStep() {
   return Number(document.querySelector("#stickerNudgeStep")?.value) || 0.5;
 }
 
 function bindStickerAlignmentEvents() {
   document.querySelector("#stickerSize")?.addEventListener("input", (event) => resizeNumberSticker(Number(event.target.value)));
+  document.querySelector("#deleteSelectedSticker")?.addEventListener("click", deleteSelectedSticker);
   document.querySelector("#stickerPositionX")?.addEventListener("input", (event) => setSelectedStickerPosition("x", event.target.value));
   document.querySelector("#stickerPositionY")?.addEventListener("input", (event) => setSelectedStickerPosition("y", event.target.value));
   document.querySelectorAll("[data-sticker-nudge]").forEach((button) => {
