@@ -716,6 +716,26 @@ async function handleApi(request, response, url) {
       params.push(title);
     }
 
+    if (Object.prototype.hasOwnProperty.call(payload, "displayName")) {
+      const displayName = String(payload.displayName || "").trim();
+      if (!displayName || displayName.length > 180) {
+        sendJson(response, 400, { error: "Informe um nome completo valido." });
+        return;
+      }
+      updates.push("full_name = ?");
+      params.push(displayName);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, "cpf")) {
+      const cpf = String(payload.cpf || "").trim();
+      if (!cpf || cpf.length > 32) {
+        sendJson(response, 400, { error: "Informe um CPF valido." });
+        return;
+      }
+      updates.push("cpf = ?");
+      params.push(cpf);
+    }
+
     if (Object.prototype.hasOwnProperty.call(payload, "photoSlides")) {
       try {
         const photoSlides = validatePhotoSlides(payload.photoSlides);

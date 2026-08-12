@@ -10,7 +10,8 @@ const state = {
   photoEditStates: {},
   standardCropZoom: null,
   editingPhotosFor: null,
-  transferringIdentityFor: null
+  transferringIdentityFor: null,
+  editingIdentityDataFor: null
 };
 
 const govScreenAssets = {
@@ -243,12 +244,15 @@ function identityCard(identity) {
       <div>
         <span class="identity-chip">ID</span>
         <h3>${escapeHtml(identity.title)}</h3>
+        <strong>${escapeHtml(identity.displayName || "Nome nao informado")}</strong>
+        <small>CPF: ${escapeHtml(identity.cpf || "Nao informado")}</small>
         <small>${hasRequiredPhotos ? `3 fotos + ${hasCustomQr ? "QR editado" : "QR padrao"}` : "Sem fotos anexadas"}</small>
         ${isAdmin() ? `<em>@${escapeHtml(identity.ownerUsername || identity.ownerName || "usuario")}</em>` : ""}
       </div>
       <div class="identity-actions">
         <button class="secondary-btn" type="button" data-open-identity="${escapeHtml(identity.id)}">Acessar</button>
         <button class="secondary-btn" type="button" data-rename-identity="${escapeHtml(identity.id)}">Renomear</button>
+        <button class="secondary-btn" type="button" data-edit-identity-data="${escapeHtml(identity.id)}">Editar nome e CPF</button>
         <button class="secondary-btn" type="button" data-edit-identity-photos="${escapeHtml(identity.id)}">Editar fotos</button>
         ${isAdmin() ? `<button class="secondary-btn" type="button" data-transfer-identity="${escapeHtml(identity.id)}">Transferir</button>` : ""}
         <button class="danger-btn" type="button" data-remove-identity="${escapeHtml(identity.id)}">Remover</button>
@@ -380,6 +384,30 @@ async function renderDashboardPage() {
           </form>
         </aside>
       </main>
+      <div class="transfer-identity-modal" id="identityDataModal" hidden>
+        <form class="transfer-identity-dialog" id="identityDataForm">
+          <div class="crop-header">
+            <div>
+              <span class="eyebrow">Dados da identidade</span>
+              <h2 id="identityDataTitle">Editar nome e CPF</h2>
+              <p>Esses dados aparecem no cartao da carteira e nas telas da identidade.</p>
+            </div>
+            <button class="crop-icon-btn" type="button" id="identityDataClose" aria-label="Fechar">x</button>
+          </div>
+          <label>
+            <span>Nome completo</span>
+            <input name="displayName" type="text" maxlength="180" required />
+          </label>
+          <label>
+            <span>CPF</span>
+            <input name="cpf" type="text" maxlength="32" inputmode="numeric" required />
+          </label>
+          <div class="crop-footer">
+            <button class="ghost-btn" type="button" id="identityDataCancel">Cancelar</button>
+            <button class="primary-btn" type="submit">Salvar dados</button>
+          </div>
+        </form>
+      </div>
       <div class="photo-edit-modal" id="photoEditModal" hidden>
         <form class="photo-edit-dialog" id="photoEditForm">
           <div class="crop-header">
@@ -667,6 +695,33 @@ function closePhotoEditModal() {
   state.croppedPhotos = {};
   state.photoEditStates = {};
   state.standardCropZoom = null;
+}
+
+function openIdentityDataModal(identityId) {
+  const identity = state.identities.find((item) => item.id === identityId);
+  const modal = document.querySelector("#identityDataModal");
+  const form = document.querySelector("#identityDataForm");
+  if (!identity || !modal || !form) return;
+
+  state.editingIdentityDataFor = identityId;
+  form.elements.displayName.value = identity.displayName || "";
+  form.elements.cpf.value = identity.cpf || "";
+  const title = document.querySelector("#identityDataTitle");
+  if (title) title.textContent = `Editar dados: ${identity.title || "Identidade"}`;
+  modal.hidden = false;
+  setModalScrollLock(true);
+  form.elements.displayName.focus();
+}
+
+function closeIdentityDataModal() {
+  const modal = document.querySelector("#identityDataModal");
+  const form = document.querySelector("#identityDataForm");
+  if (modal) modal.hidden = true;
+  if (form) form.reset();
+  state.editingIdentityDataFor = null;
+  if (!document.querySelector("#photoEditModal:not([hidden]), #transferIdentityModal:not([hidden]), #cropModal:not([hidden])")) {
+    setModalScrollLock(false);
+  }
 }
 
 function openTransferIdentityModal(identityId) {
@@ -1366,7 +1421,7 @@ function closeCropper(clearInput = false) {
   const crop = documentCrop.current;
   const modal = document.querySelector("#cropModal");
   if (modal) modal.hidden = true;
-  if (!document.querySelector("#photoEditModal:not([hidden]), #transferIdentityModal:not([hidden])")) {
+  if (!document.querySelector("#photoEditModal:not([hidden]), #transferIdentityModal:not([hidden]), #identityDataModal:not([hidden])")) {
     setModalScrollLock(false);
   }
   if (clearInput && crop) {
@@ -2390,6 +2445,34 @@ function bindEvents() {
   document.querySelector("#photoEditClose")?.addEventListener("click", closePhotoEditModal);
   document.querySelector("#photoEditCancel")?.addEventListener("click", closePhotoEditModal);
 
+  const identityDataForm = document.querySelector("#identityDataForm");
+  if (identityDataForm) {
+    identityDataForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!state.editingIdentityDataFor) return;
+      const form = new FormData(identityDataForm);
+      const displayName = String(form.get("displayName") || "").trim();
+      const cpf = String(form.get("cpf") || "").trim();
+      const currentMessage = identityDataForm.querySelector("[data-form-error]");
+      if (currentMessage) currentMessage.remove();
+
+      try {
+        if (!displayName || !cpf) throw new Error("Informe o nome completo e o CPF.");
+        await api(`/api/identities/${encodeURIComponent(state.editingIdentityDataFor)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ displayName, cpf })
+        });
+        closeIdentityDataModal();
+        renderDashboardPage();
+      } catch (error) {
+        identityDataForm.insertAdjacentHTML("beforeend", `<p class="form-message" data-form-error>${escapeHtml(error.message)}</p>`);
+      }
+    });
+  }
+
+  document.querySelector("#identityDataClose")?.addEventListener("click", closeIdentityDataModal);
+  document.querySelector("#identityDataCancel")?.addEventListener("click", closeIdentityDataModal);
+
   const transferIdentityForm = document.querySelector("#transferIdentityForm");
   if (transferIdentityForm) {
     transferIdentityForm.addEventListener("submit", async (event) => {
@@ -2445,6 +2528,12 @@ function bindEvents() {
   document.querySelectorAll("[data-edit-identity-photos]").forEach((button) => {
     button.addEventListener("click", () => {
       openPhotoEditModal(button.dataset.editIdentityPhotos);
+    });
+  });
+
+  document.querySelectorAll("[data-edit-identity-data]").forEach((button) => {
+    button.addEventListener("click", () => {
+      openIdentityDataModal(button.dataset.editIdentityData);
     });
   });
 
