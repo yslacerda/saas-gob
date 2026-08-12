@@ -444,7 +444,7 @@ async function renderDashboardPage() {
           <div class="crop-controls">
             <label>
               <span>Zoom</span>
-              <input id="cropZoom" type="range" min="0.1" max="${maxCropZoom}" step="0.01" value="1" />
+              <input id="cropZoom" type="range" min="0" max="1000" step="1" value="404" />
             </label>
             <div class="crop-actions-row">
               <button class="secondary-btn" type="button" id="cropRotateLeft">Girar esquerda</button>
@@ -1122,11 +1122,9 @@ async function openCropper(stepKey, file = null, statusElement = null, savedEdit
 
   if (title) title.textContent = `Ajuste: ${step ? step.label : "Imagem"}`;
   if (zoomInput) {
-    zoomInput.min = "0.1";
-    zoomInput.max = String(maxCropZoom);
-    zoomInput.value = documentCrop.current.zoom.toFixed(2);
     zoomInput.disabled = Boolean(state.standardCropZoom);
     zoomInput.title = state.standardCropZoom ? "Zoom padronizado pelo primeiro recorte desta edicao" : "";
+    syncCropZoomInput(documentCrop.current, zoomInput);
   }
   const eraserInput = document.querySelector("#eraserSize");
   const pencilInput = document.querySelector("#pencilSize");
@@ -1315,6 +1313,24 @@ function getActivePointerDistance(crop) {
   return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
 }
 
+function cropZoomToSliderValue(zoom) {
+  const minZoom = 0.1;
+  const safeZoom = clamp(Number(zoom) || 1, minZoom, maxCropZoom);
+  return Math.round((Math.log(safeZoom / minZoom) / Math.log(maxCropZoom / minZoom)) * 1000);
+}
+
+function cropSliderValueToZoom(value) {
+  const minZoom = 0.1;
+  const progress = clamp(Number(value) || 0, 0, 1000) / 1000;
+  return minZoom * Math.pow(maxCropZoom / minZoom, progress);
+}
+
+function syncCropZoomInput(crop, zoomInput = document.querySelector("#cropZoom")) {
+  if (!crop || !zoomInput) return;
+  zoomInput.value = String(cropZoomToSliderValue(crop.zoom));
+  zoomInput.setAttribute("aria-valuetext", `${Number(crop.zoom).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} vezes`);
+}
+
 function resetCropPointerActions(crop) {
   if (!crop) return;
   crop.dragStart = null;
@@ -1326,14 +1342,13 @@ function resetCropPointerActions(crop) {
 }
 
 function applyCropPinchZoom(crop, zoomInput) {
-  if (!crop || !zoomInput || crop.pinchStartDistance <= 0) return;
+  if (!crop || !zoomInput || zoomInput.disabled || crop.pinchStartDistance <= 0) return;
   const distance = getActivePointerDistance(crop);
   if (distance <= 0) return;
 
-  const minZoom = Number(zoomInput.min || 0.1);
-  const maxZoom = Number(zoomInput.max || maxCropZoom);
-  crop.zoom = clamp(crop.pinchStartZoom * (distance / crop.pinchStartDistance), minZoom, maxZoom);
-  zoomInput.value = crop.zoom.toFixed(2);
+  const pinchRatio = distance / crop.pinchStartDistance;
+  crop.zoom = clamp(crop.pinchStartZoom * Math.pow(pinchRatio, 0.55), 0.1, maxCropZoom);
+  syncCropZoomInput(crop, zoomInput);
   constrainCropOffset();
   syncStickerAlignmentControls();
   drawCropCanvas();
@@ -1401,7 +1416,8 @@ function bindCropperEvents() {
 
   zoomInput.addEventListener("input", () => {
     if (!documentCrop.current || zoomInput.disabled) return;
-    documentCrop.current.zoom = Number(zoomInput.value);
+    documentCrop.current.zoom = cropSliderValueToZoom(zoomInput.value);
+    syncCropZoomInput(documentCrop.current, zoomInput);
     constrainCropOffset();
     syncStickerAlignmentControls();
     drawCropCanvas();
