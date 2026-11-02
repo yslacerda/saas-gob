@@ -125,9 +125,9 @@ async function api(path, options = {}) {
   if (!response.ok) {
     if (response.status === 402 && payload.code === "SUBSCRIPTION_REQUIRED") {
       if (state.user && state.user.access) state.user.access.active = false;
-      if (window.location.pathname !== "/assinatura") goTo("/assinatura", true);
+      if (window.location.pathname !== "/assinaturas") goTo("/assinaturas", true);
     }
-    throw new Error(payload.error || "Falha na requisicao");
+    throw new Error(payload.error || "Falha na requisição");
   }
   return payload;
 }
@@ -178,7 +178,7 @@ function renderShell(content) {
   app.innerHTML = `${content}
     <footer class="simulator-notice">
       <strong>SIMULADOR — SEM VALIDADE DOCUMENTAL</strong>
-      <span>Projeto independente, sem vinculo com gov.br, Governo Federal ou qualquer orgao publico.</span>
+      <span>Projeto independente, sem vínculo com gov.br, Governo Federal ou qualquer órgão público.</span>
     </footer>`;
   bindEvents();
 }
@@ -200,8 +200,8 @@ function renderAuthPage(message = "") {
 
         <div class="auth-copy">
           <span class="eyebrow">Acesso seguro</span>
-          <h1>${isLogin ? "Entre com usuario." : "Crie seu usuario."}</h1>
-          <p>Use seu usuario para cadastrar, consultar e remover identidades no painel.</p>
+          <h1>${isLogin ? "Entre com seu usuário." : "Crie seu usuário."}</h1>
+          <p>Use seu usuário para cadastrar, consultar e remover identidades no painel.</p>
         </div>
 
         <div class="auth-tabs" role="tablist">
@@ -212,18 +212,18 @@ function renderAuthPage(message = "") {
         <form class="auth-form" id="authForm">
           ${!isLogin ? `
             <label>
-              <span>Usuario</span>
+              <span>Usuário</span>
               <input name="username" type="text" autocomplete="username" placeholder="seu.usuario" required />
             </label>
           ` : `
             <label>
-              <span>Usuario</span>
+              <span>Usuário</span>
               <input name="login" type="text" autocomplete="username" placeholder="seu.usuario" required />
             </label>
           `}
           <label>
             <span>Senha</span>
-            <input name="password" type="password" autocomplete="${isLogin ? "current-password" : "new-password"}" placeholder="Minimo de 6 caracteres" required />
+            <input name="password" type="password" autocomplete="${isLogin ? "current-password" : "new-password"}" placeholder="Mínimo de 6 caracteres" required />
           </label>
           ${message ? `<p class="form-message">${escapeHtml(message)}</p>` : ""}
           <button class="primary-btn" type="submit">${isLogin ? "Entrar" : "Cadastrar"}</button>
@@ -260,22 +260,22 @@ async function renderSubscriptionPage() {
 
   const paymentResult = new URLSearchParams(window.location.search).get("payment");
   const resultMessages = {
-    success: "Pix concluido. Estamos aguardando a confirmacao segura da Asaas para liberar seu acesso.",
-    canceled: "Pagamento cancelado. Voce pode escolher um plano e tentar novamente.",
+    success: "Pix concluído. Estamos aguardando a confirmação segura da Asaas para liberar seu acesso.",
+    canceled: "Pagamento cancelado. Você pode escolher um plano e tentar novamente.",
     expired: "O checkout expirou. Gere um novo Pix para continuar."
   };
   const purchaseStatus = billing.latestPurchase && billing.latestPurchase.status;
   const paymentMessage = resultMessages[paymentResult]
-    || (purchaseStatus === "pending" ? "Existe um checkout aguardando pagamento ou confirmacao." : "");
-  const canPurchase = billing.paymentConfigured && !(state.user.access && state.user.access.exempt);
+    || (purchaseStatus === "pending" ? "Existe um checkout aguardando pagamento ou confirmação." : "");
+  const canPurchase = billing.paymentConfigured && !isAdmin();
 
   renderShell(`
     <section class="subscription-page">
       <header class="subscription-header">
         <div>
           <span class="subscription-brand">Gov.Fake</span>
-          <h1>Escolha seu periodo de acesso</h1>
-          <p>Pagamento unico por Pix. Sem cartao, renovacao automatica ou cobranca surpresa.</p>
+          <h1>Escolha seu período de acesso</h1>
+          <p>Pagamento único por Pix. Sem cartão, renovação automática ou cobrança surpresa.</p>
         </div>
         <div class="header-actions">
           <span>@${escapeHtml(state.user.username || state.user.name)}</span>
@@ -283,19 +283,19 @@ async function renderSubscriptionPage() {
         </div>
       </header>
 
-      ${isPreview ? `<p class="billing-message" role="status">Previa administrativa da tela de planos. Sua conta continua com acesso permanente.</p>` : ""}
+      ${isPreview ? `<p class="billing-message" role="status">Prévia administrativa da tela de planos. A conta administrativa continua com acesso.</p>` : ""}
       ${paymentMessage ? `<p class="billing-message" role="status">${escapeHtml(paymentMessage)}</p>` : ""}
-      ${billing.paymentConfigured ? "" : `<p class="billing-message error" role="alert">O pagamento ainda nao foi configurado pelo administrador.</p>`}
+      ${billing.paymentConfigured ? "" : `<p class="billing-message error" role="alert">O pagamento ainda não foi configurado pelo administrador.</p>`}
 
       <main class="pricing-grid">
         <article class="pricing-card">
           <span class="plan-kicker">30 dias</span>
           <h2>Mensal</h2>
-          <div class="plan-price"><strong>R$ 39,99</strong><span>pagamento unico</span></div>
+          <div class="plan-price"><strong>R$ 39,99</strong><span>pagamento único</span></div>
           <ul>
             <li>Acesso completo por 30 dias</li>
             <li>Pagamento seguro via Pix</li>
-            <li>Renovacao manual</li>
+            <li>Renovação manual</li>
           </ul>
           <button class="primary-btn plan-button" type="button" data-plan-code="monthly" ${canPurchase ? "" : "disabled"}>Pagar com Pix</button>
         </article>
@@ -305,7 +305,7 @@ async function renderSubscriptionPage() {
           <span class="plan-kicker">90 dias</span>
           <h2>Trimestral</h2>
           <div class="price-comparison"><s>3 mensais: R$ 119,97</s><strong>Economize R$ 59,98</strong></div>
-          <div class="plan-price"><strong>R$ 59,99</strong><span>pagamento unico</span></div>
+          <div class="plan-price"><strong>R$ 59,99</strong><span>pagamento único</span></div>
           <ul>
             <li>Acesso completo por 90 dias</li>
             <li>50% de economia frente a 3 mensalidades</li>
@@ -315,13 +315,13 @@ async function renderSubscriptionPage() {
         </article>
       </main>
 
-      <p class="payment-footnote">O pagamento e processado no Checkout Asaas. O acesso so e liberado apos confirmacao por webhook.</p>
+      <p class="payment-footnote">O pagamento é processado no Checkout Asaas. O acesso só é liberado após confirmação por webhook.</p>
     </section>
   `);
 
   if (paymentResult === "success" && purchaseStatus === "pending") {
     window.setTimeout(() => {
-      if (window.location.pathname === "/assinatura") renderSubscriptionPage();
+      if (window.location.pathname === "/assinaturas") renderSubscriptionPage();
     }, 2500);
   }
 }
@@ -334,10 +334,10 @@ function identityCard(identity) {
       <div>
         <span class="identity-chip">ID</span>
         <h3>${escapeHtml(identity.title)}</h3>
-        <strong>${escapeHtml(identity.displayName || "Nome nao informado")}</strong>
-        <small>CPF: ${escapeHtml(identity.cpf || "Nao informado")}</small>
+        <strong>${escapeHtml(identity.displayName || "Nome não informado")}</strong>
+        <small>CPF: ${escapeHtml(identity.cpf || "Não informado")}</small>
         <small>${hasRequiredPhotos ? "3 fotos + QR fixo sem validade" : "Sem fotos anexadas"}</small>
-        ${isAdmin() ? `<em>@${escapeHtml(identity.ownerUsername || identity.ownerName || "usuario")}</em>` : ""}
+        ${isAdmin() ? `<em>@${escapeHtml(identity.ownerUsername || identity.ownerName || "usuário")}</em>` : ""}
       </div>
       <div class="identity-actions">
         <button class="secondary-btn" type="button" data-open-identity="${escapeHtml(identity.id)}">Acessar</button>
@@ -358,8 +358,8 @@ function adminUserList() {
     <section class="admin-users">
       <div class="panel-heading compact">
         <div>
-          <span class="eyebrow">Usuarios</span>
-          <h2>Gerenciar usuarios</h2>
+          <span class="eyebrow">Usuários</span>
+          <h2>Gerenciar usuários</h2>
         </div>
         <strong>${state.users.length}</strong>
       </div>
@@ -371,11 +371,9 @@ function adminUserList() {
             const isUserAdmin = user.role === "admin";
             const accessLabel = isUserAdmin
               ? "acesso administrativo"
-              : user.access && user.access.exempt
-                ? "acesso permanente"
-                : user.access && user.access.active
-                  ? `ativo ate ${new Date(user.access.until).toLocaleDateString("pt-BR")}`
-                  : "assinatura necessaria";
+              : user.access && user.access.active
+                ? `ativo até ${new Date(user.access.until).toLocaleDateString("pt-BR")}`
+                : "assinatura necessária";
             return `
               <article class="user-card">
                 <div>
@@ -383,13 +381,12 @@ function adminUserList() {
                   <small>${escapeHtml(user.role || "user")} - ${identityCount} identidade${identityCount === 1 ? "" : "s"} - ${escapeHtml(accessLabel)}</small>
                 </div>
                 <div class="user-card-actions">
-                  ${isUserAdmin ? "" : `<button class="secondary-btn" type="button" data-toggle-access="${escapeHtml(user.id)}" data-access-exempt="${user.access && user.access.exempt ? "true" : "false"}">${user.access && user.access.exempt ? "Exigir assinatura" : "Liberar permanente"}</button>`}
                   <button class="danger-btn" type="button" data-remove-user="${escapeHtml(user.id)}" ${isCurrentUser ? "disabled" : ""}>Remover</button>
                 </div>
               </article>
             `;
           }).join("")
-          : `<div class="empty-state compact">Nenhum usuario cadastrado.</div>`}
+          : `<div class="empty-state compact">Nenhum usuário cadastrado.</div>`}
       </div>
     </section>
   `;
@@ -402,7 +399,7 @@ async function renderDashboardPage() {
     return;
   }
   if (!state.user.access || !state.user.access.active) {
-    goTo("/assinatura", true);
+    goTo("/assinaturas", true);
     return;
   }
 
@@ -418,7 +415,7 @@ async function renderDashboardPage() {
         <div>
           ${govLogo()}
           <h1>Dashboard</h1>
-          ${isAdmin() ? "" : "<p>Gerencie as identidades vinculadas ao seu usuario.</p>"}
+          ${isAdmin() ? "" : "<p>Gerencie as identidades vinculadas ao seu usuário.</p>"}
         </div>
         <div class="header-actions">
           <span>@${escapeHtml(state.user.username || state.user.name)}${isAdmin() ? " - admin" : ""}</span>
@@ -451,7 +448,7 @@ async function renderDashboardPage() {
           <form id="identityForm" class="identity-form">
             ${isAdmin() ? `
               <label>
-                <span>Usuario dono</span>
+                <span>Usuário proprietário</span>
                 <select name="userId" required>
                   ${state.users.map((user) => `
                     <option value="${escapeHtml(user.id)}">@${escapeHtml(user.username || user.name)}</option>
@@ -460,7 +457,7 @@ async function renderDashboardPage() {
               </label>
             ` : ""}
             <label>
-              <span>Titulo</span>
+              <span>Título</span>
               <input name="title" type="text" placeholder="Identidade 2" />
             </label>
             <div class="wallet-data-card">
@@ -475,7 +472,7 @@ async function renderDashboardPage() {
               </label>
             </div>
             <div class="ordered-uploads" aria-label="Fotos da identidade em ordem">
-              <p class="form-note">Anexe as 3 fotos obrigatorias: Frente, Verso e Assinatura. O quarto slide usa sempre o QR fixo e sem validade do simulador.</p>
+              <p class="form-note">Anexe as 3 fotos obrigatórias: Frente, Verso e Assinatura. O quarto slide usa sempre o QR fixo e sem validade do simulador.</p>
               ${documentUploadSteps.map((step, index) => `
                 <label class="upload-step">
                   <span>${index + 1}. ${step.label}${index < requiredDocumentUploadSteps.length ? "" : " (opcional)"}</span>
@@ -496,7 +493,7 @@ async function renderDashboardPage() {
             <div>
               <span class="eyebrow">Dados da identidade</span>
               <h2 id="identityDataTitle">Editar nome e CPF</h2>
-              <p>Esses dados aparecem no cartao da carteira e nas telas da identidade.</p>
+              <p>Esses dados aparecem no cartão da carteira e nas telas da identidade.</p>
             </div>
             <button class="crop-icon-btn" type="button" id="identityDataClose" aria-label="Fechar">x</button>
           </div>
@@ -530,7 +527,7 @@ async function renderDashboardPage() {
                 <label>
                   <span>${index + 1}. ${step.label}${index < requiredDocumentUploadSteps.length ? "" : " (opcional)"}</span>
                   <input name="edit-${step.key}" type="file" accept="${acceptedPhotoTypes}" />
-                  <small class="crop-status ready" data-edit-crop-status="${step.key}" aria-live="polite">${index < requiredDocumentUploadSteps.length ? `Foto atual mantida - ${documentCrop.width}x${documentCrop.height}` : "QR padrao mantido se nenhum arquivo for enviado."}</small>
+                  <small class="crop-status ready" data-edit-crop-status="${step.key}" aria-live="polite">${index < requiredDocumentUploadSteps.length ? `Foto atual mantida - ${documentCrop.width}x${documentCrop.height}` : "QR padrão mantido se nenhum arquivo for enviado."}</small>
                 </label>
                 <button class="secondary-btn edit-current-photo-btn" type="button" data-edit-current-photo="${step.key}">Editar foto atual</button>
               </div>
@@ -548,17 +545,17 @@ async function renderDashboardPage() {
             <div>
               <span class="eyebrow">Transferir identidade</span>
               <h2 id="transferIdentityTitle">Transferir</h2>
-              <p id="transferIdentityDescription">A identidade sera movida da conta atual para o usuario selecionado.</p>
+              <p id="transferIdentityDescription">A identidade será movida da conta atual para o usuário selecionado.</p>
             </div>
             <button class="crop-icon-btn" type="button" id="transferIdentityClose" aria-label="Fechar">x</button>
           </div>
           <label>
-            <span>Usuario destino</span>
+            <span>Usuário de destino</span>
             <select name="targetUserId" id="transferIdentityTarget" required></select>
           </label>
           <div class="crop-footer">
             <button class="ghost-btn" type="button" id="transferIdentityCancel">Cancelar</button>
-            <button class="primary-btn" type="submit">Confirmar transferencia</button>
+            <button class="primary-btn" type="submit">Confirmar transferência</button>
           </div>
         </form>
       </div>
@@ -585,14 +582,14 @@ async function renderDashboardPage() {
               <button class="secondary-btn" type="button" id="cropRotateRight">Girar direita</button>
             </div>
             <div class="front-edit-tools" id="frontEditTools" hidden>
-              <div class="crop-tool-tabs" aria-label="Ferramentas de edicao">
+              <div class="crop-tool-tabs" aria-label="Ferramentas de edição">
                 <button class="active" type="button" data-crop-mode="move">Mover</button>
                 <button type="button" data-crop-mode="erase">Borracha</button>
-                <button type="button" data-crop-mode="pencil">Lapis fino</button>
+                <button type="button" data-crop-mode="pencil">Lápis fino</button>
                 <button type="button" data-crop-mode="pixel">Pixel</button>
                 <button type="button" data-crop-mode="eyedropper">Conta-gotas</button>
-                <button type="button" data-crop-mode="sticker7">Numero 7</button>
-                <button type="button" data-crop-mode="sticker0">Numero 0</button>
+                <button type="button" data-crop-mode="sticker7">Número 7</button>
+                <button type="button" data-crop-mode="sticker0">Número 0</button>
               </div>
               <button class="secondary-btn undo-brush-btn" type="button" id="undoBrushStroke" disabled>Desfazer</button>
               <label>
@@ -602,7 +599,7 @@ async function renderDashboardPage() {
               <label>
                 <span class="pencil-size-heading">Espessura do lapis <output id="pencilSizeValue">${defaultPencilSize} px</output></span>
                 <input id="pencilSize" type="range" min="0.5" max="120" step="0.5" value="${defaultPencilSize}" />
-                <small>Use Lapis fino para tracos suaves. Pixel desenha pontos exatos de 1 px.</small>
+                <small>Use Lápis fino para traços suaves. Pixel desenha pontos exatos de 1 px.</small>
               </label>
               <div class="pencil-color-panel">
                 <span class="pencil-color-title">Cor extraida da foto</span>
@@ -651,7 +648,7 @@ async function renderDashboardPage() {
                       <option value="5">5 px</option>
                     </select>
                   </label>
-                  <div class="sticker-nudge-pad" aria-label="Mover adesivo com precisao">
+                  <div class="sticker-nudge-pad" aria-label="Mover adesivo com precisão">
                     <button type="button" data-sticker-control data-sticker-nudge="0,-1" aria-label="Mover adesivo para cima" disabled>&uarr;</button>
                     <button type="button" data-sticker-control data-sticker-nudge="-1,0" aria-label="Mover adesivo para esquerda" disabled>&larr;</button>
                     <button type="button" data-sticker-control data-sticker-nudge="0,1" aria-label="Mover adesivo para baixo" disabled>&darr;</button>
@@ -662,7 +659,7 @@ async function renderDashboardPage() {
                   <span>Opacidade durante o alinhamento: <output id="stickerPreviewOpacityValue">55%</output></span>
                   <input id="stickerPreviewOpacity" data-sticker-control type="range" min="15" max="100" step="1" value="55" disabled />
                 </label>
-                <small>A transparencia vale apenas na previa. Ao aplicar, o adesivo fica 100% opaco.</small>
+                <small>A transparência vale apenas na prévia. Ao aplicar, o adesivo fica 100% opaco.</small>
                 <button class="danger-btn sticker-delete-button" type="button" id="deleteSelectedSticker" data-sticker-control disabled>Apagar somente este adesivo</button>
               </div>
             </div>
@@ -708,7 +705,7 @@ function renderIdentityView(identity) {
 
           <button class="wallet-add-button" id="addFromIdentity" type="button">Adicionar documento</button>
 
-          <nav class="wallet-bottom-nav" aria-label="Navegacao principal">
+          <nav class="wallet-bottom-nav" aria-label="Navegação principal">
             <span>${navSvg("home")}<em>Inicio</em></span>
             <span>${navSvg("data")}<em>Dados</em></span>
             <strong><span class="qr-nav-circle">${navSvg("qr")}</span><em>QR Code</em></strong>
@@ -843,14 +840,14 @@ function openTransferIdentityModal(identityId) {
   state.transferringIdentityFor = identityId;
   if (title) title.textContent = `Transferir ${identity.title}`;
   if (description) {
-    const currentOwner = identity.ownerUsername || identity.ownerName || "usuario atual";
-    description.textContent = `A identidade sera movida de @${currentOwner} para o usuario selecionado.`;
+    const currentOwner = identity.ownerUsername || identity.ownerName || "usuário atual";
+    description.textContent = `A identidade será movida de @${currentOwner} para o usuário selecionado.`;
   }
   targetSelect.innerHTML = users.length
     ? users.map((user) => `
       <option value="${escapeHtml(user.id)}">@${escapeHtml(user.username || user.name)}</option>
     `).join("")
-    : `<option value="">Nenhum outro usuario disponivel</option>`;
+    : `<option value="">Nenhum outro usuário disponível</option>`;
   targetSelect.disabled = users.length === 0;
   const submitButton = form.querySelector('button[type="submit"]');
   if (submitButton) submitButton.disabled = users.length === 0;
@@ -1148,7 +1145,7 @@ function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.addEventListener("load", () => resolve(reader.result));
-    reader.addEventListener("error", () => reject(new Error("Nao foi possivel ler a foto.")));
+    reader.addEventListener("error", () => reject(new Error("Não foi possível ler a foto.")));
     reader.readAsDataURL(file);
   });
 }
@@ -1157,7 +1154,7 @@ function loadImage(src) {
   return new Promise((resolve, reject) => {
     const image = new Image();
     image.addEventListener("load", () => resolve(image));
-    image.addEventListener("error", () => reject(new Error("Nao foi possivel abrir a imagem.")));
+    image.addEventListener("error", () => reject(new Error("Não foi possível abrir a imagem.")));
     image.src = src;
   });
 }
@@ -1284,7 +1281,7 @@ async function openCropper(stepKey, file = null, statusElement = null, savedEdit
   if (title) title.textContent = `Ajuste: ${step ? step.label : "Imagem"}`;
   if (zoomInput) {
     zoomInput.disabled = Boolean(state.standardCropZoom);
-    zoomInput.title = state.standardCropZoom ? "Zoom padronizado pelo primeiro recorte desta edicao" : "";
+    zoomInput.title = state.standardCropZoom ? "Zoom padronizado pelo primeiro recorte desta edição" : "";
     syncCropZoomInput(documentCrop.current, zoomInput);
   }
   const eraserInput = document.querySelector("#eraserSize");
@@ -1770,7 +1767,7 @@ function syncFrontEditTools() {
   syncBrushUndoButton();
   if (note) {
     note.textContent = crop && crop.stepKey === "front"
-      ? "Selecione um adesivo para ajustar tamanho e posicao com precisao. O primeiro recorte define o zoom das demais fotos."
+      ? "Selecione um adesivo para ajustar tamanho e posição com precisão. O primeiro recorte define o zoom das demais fotos."
       : "Arraste para centralizar. O primeiro recorte define o mesmo percentual de zoom para todas as fotos.";
   }
   setCropMode(crop && crop.stepKey === "front" ? crop.mode : "move");
@@ -2179,7 +2176,7 @@ function syncStickerAlignmentControls() {
   });
   if (label) {
     label.textContent = sticker
-      ? `${sticker.templateKey === "number0" ? "Numero 0" : "Numero 7"} selecionado`
+      ? `${sticker.templateKey === "number0" ? "Número 0" : "Número 7"} selecionado`
       : "Nenhum adesivo selecionado";
   }
   if (!crop || !sticker) return;
@@ -2369,7 +2366,7 @@ async function renderIdentityPage() {
     return;
   }
   if (!state.user.access || !state.user.access.active) {
-    goTo("/assinatura", true);
+    goTo("/assinaturas", true);
     return;
   }
 
@@ -2390,7 +2387,7 @@ async function renderRoute() {
   if (path === "/auth") {
     const hasUser = await ensureUser();
     if (hasUser) {
-      goTo(state.user.access && state.user.access.active ? "/dashboard" : "/assinatura", true);
+      goTo(state.user.access && state.user.access.active ? "/dashboard" : "/assinaturas", true);
       return;
     }
     renderAuthPage();
@@ -2402,7 +2399,7 @@ async function renderRoute() {
     return;
   }
 
-  if (path === "/assinatura") {
+  if (path === "/assinaturas") {
     renderSubscriptionPage();
     return;
   }
@@ -2465,7 +2462,7 @@ function bindEvents() {
         });
         state.user = payload.user;
         state.csrfToken = payload.csrfToken || "";
-        goTo(payload.user.access && payload.user.access.active ? "/dashboard" : "/assinatura");
+        goTo(payload.user.access && payload.user.access.active ? "/dashboard" : "/assinaturas");
       } catch (error) {
         renderAuthPage(error.message);
       }
@@ -2630,7 +2627,7 @@ function bindEvents() {
       if (currentMessage) currentMessage.remove();
 
       try {
-        if (!targetUserId) throw new Error("Selecione um usuario destino.");
+        if (!targetUserId) throw new Error("Selecione um usuário de destino.");
         await api(`/api/identities/${encodeURIComponent(state.transferringIdentityFor)}/transfer`, {
           method: "POST",
           body: JSON.stringify({ targetUserId })
@@ -2656,11 +2653,11 @@ function bindEvents() {
     button.addEventListener("click", async () => {
       const identity = state.identities.find((item) => item.id === button.dataset.renameIdentity);
       if (!identity) return;
-      const title = window.prompt("Novo titulo da identidade:", identity.title || "");
+      const title = window.prompt("Novo título da identidade:", identity.title || "");
       if (title === null) return;
       const trimmedTitle = title.trim();
       if (!trimmedTitle) {
-        window.alert("Informe um titulo valido.");
+        window.alert("Informe um título válido.");
         return;
       }
       await api(`/api/identities/${encodeURIComponent(identity.id)}`, {
@@ -2701,7 +2698,7 @@ function bindEvents() {
 
   document.querySelectorAll("[data-remove-user]").forEach((button) => {
     button.addEventListener("click", async () => {
-      if (!window.confirm("Remover este usuario e todas as identidades dele?")) return;
+      if (!window.confirm("Remover este usuário e todas as identidades dele?")) return;
       await api(`/api/users/${encodeURIComponent(button.dataset.removeUser)}`, {
         method: "DELETE"
       });
@@ -2709,19 +2706,8 @@ function bindEvents() {
     });
   });
 
-  document.querySelectorAll("[data-toggle-access]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const currentlyExempt = button.dataset.accessExempt === "true";
-      await api(`/api/users/${encodeURIComponent(button.dataset.toggleAccess)}/access`, {
-        method: "PATCH",
-        body: JSON.stringify({ exempt: !currentlyExempt })
-      });
-      renderDashboardPage();
-    });
-  });
-
   document.querySelector("#previewPlansButton")?.addEventListener("click", () => {
-    goTo("/assinatura?preview=1");
+    goTo("/assinaturas?preview=1");
   });
 
   const logoutButton = document.querySelector("#logoutButton");

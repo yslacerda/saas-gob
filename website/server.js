@@ -128,7 +128,7 @@ const ready = (async () => {
   `);
   await run("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user'");
   await run("ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT");
-  // Na primeira execucao, preserva o acesso das contas que ja existiam. Novas contas usam o default false.
+  // Coluna legada mantida por compatibilidade; o acesso agora depende de pagamento confirmado.
   await run("ALTER TABLE users ADD COLUMN IF NOT EXISTS access_exempt BOOLEAN NOT NULL DEFAULT TRUE");
   await run("ALTER TABLE users ALTER COLUMN access_exempt SET DEFAULT FALSE");
   await run("ALTER TABLE users ADD COLUMN IF NOT EXISTS access_until TIMESTAMPTZ");
@@ -314,7 +314,7 @@ function rejectCrossOriginMutation(request, response) {
   }
   if (isSameOriginRequest(request)) return false;
 
-  sendJson(response, 403, { error: "Origem da requisicao nao permitida." });
+  sendJson(response, 403, { error: "Origem da requisição não permitida." });
   return true;
 }
 
@@ -339,7 +339,7 @@ function isUuid(value) {
 
 function requireUuid(value, response, label = "Identificador") {
   if (isUuid(value)) return true;
-  sendJson(response, 400, { error: `${label} invalido.` });
+  sendJson(response, 400, { error: `${label} inválido.` });
   return false;
 }
 
@@ -365,8 +365,7 @@ function normalizeUsername(value) {
 
 function publicUser(row) {
   const accessUntil = row.access_until ? new Date(row.access_until) : null;
-  const accessExempt = Boolean(row.access_exempt);
-  const hasAccess = (row.role || "user") === "admin" || accessExempt || (accessUntil && accessUntil.getTime() > Date.now());
+  const hasAccess = (row.role || "user") === "admin" || (accessUntil && accessUntil.getTime() > Date.now());
   return {
     id: row.id,
     name: row.name,
@@ -374,7 +373,7 @@ function publicUser(row) {
     role: row.role || "user",
     access: {
       active: Boolean(hasAccess),
-      exempt: accessExempt || (row.role || "user") === "admin",
+      exempt: false,
       until: accessUntil ? accessUntil.toISOString() : null
     }
   };
@@ -419,23 +418,23 @@ function parsePhotoEditStates(value) {
 function validatePhotoEditStates(value) {
   if (value === undefined || value === null) return {};
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Os dados de edicao das fotos sao invalidos.");
+    throw new Error("Os dados de edição das fotos são inválidos.");
   }
   const allowedKeys = new Set(["front", "back", "signature"]);
   const result = {};
   for (const [key, edit] of Object.entries(value)) {
     if (!allowedKeys.has(key) || edit === null) continue;
     if (!edit || typeof edit !== "object" || Array.isArray(edit)) {
-      throw new Error(`A edicao da foto ${key} e invalida.`);
+      throw new Error(`A edição da foto ${key} é inválida.`);
     }
     const source = String(edit.source || "");
     const match = /^data:([^;,]+);base64,[A-Za-z0-9+/=]+$/.exec(source);
     if (!match || !acceptedPhotoMimeTypes.has(match[1]) || source.length > maxPhotoDataUrlLength) {
-      throw new Error(`O arquivo-fonte da foto ${key} e invalido ou excede 4 MB.`);
+      throw new Error(`O arquivo-fonte da foto ${key} é inválido ou excede 4 MB.`);
     }
     const brushHistory = Array.isArray(edit.brushHistory) ? edit.brushHistory : [];
     if (brushHistory.length > 500 || brushHistory.some((stroke) => !stroke || !Array.isArray(stroke.points) || stroke.points.length > 50_000)) {
-      throw new Error(`O historico de edicao da foto ${key} excede o limite permitido.`);
+      throw new Error(`O histórico de edição da foto ${key} excede o limite permitido.`);
     }
     result[key] = edit;
   }
@@ -444,7 +443,7 @@ function validatePhotoEditStates(value) {
 
 function validatePhotoSlides(value) {
   if (!Array.isArray(value) || value.length < minPhotoSlideCount || value.length > maxPhotoSlideCount) {
-    throw new Error("Anexe exatamente 3 fotos: Frente, Verso e Assinatura. O QR e fixo no simulador.");
+    throw new Error("Anexe exatamente 3 fotos: Frente, Verso e Assinatura. O QR é fixo no simulador.");
   }
 
   return value.map((slide, index) => {
@@ -466,19 +465,19 @@ function isAdmin(user) {
 
 function requireAdmin(user, response) {
   if (isAdmin(user)) return true;
-  sendJson(response, 403, { error: "Permissao insuficiente." });
+  sendJson(response, 403, { error: "Permissão insuficiente." });
   return false;
 }
 
 function hasProductAccess(user) {
   if (!user) return false;
-  if (isAdmin(user) || user.access_exempt) return true;
+  if (isAdmin(user)) return true;
   return Boolean(user.access_until && new Date(user.access_until).getTime() > Date.now());
 }
 
 function requireProductAccess(user, response) {
   if (hasProductAccess(user)) return true;
-  sendJson(response, 402, { error: "Assinatura necessaria para acessar este recurso.", code: "SUBSCRIPTION_REQUIRED" });
+  sendJson(response, 402, { error: "Assinatura necessária para acessar este recurso.", code: "SUBSCRIPTION_REQUIRED" });
   return false;
 }
 
@@ -495,7 +494,7 @@ function requestOrigin(request) {
 }
 
 async function asaasRequest(pathname, options = {}) {
-  if (!asaasApiKey) throw new Error("Pagamento indisponivel: ASAAS_API_KEY nao configurada.");
+  if (!asaasApiKey) throw new Error("Pagamento indisponível: ASAAS_API_KEY não configurada.");
   const response = await fetch(`${asaasApiBaseUrl}${pathname}`, {
     ...options,
     headers: {
@@ -600,7 +599,7 @@ async function getUserFromRequest(request) {
 async function requireUser(request, response) {
   const user = await getUserFromRequest(request);
   if (!user) {
-    sendJson(response, 401, { error: "Nao autenticado" });
+    sendJson(response, 401, { error: "Não autenticado" });
     return null;
   }
   return user;
@@ -610,7 +609,7 @@ function requireCsrf(request, response, user) {
   const token = request.headers["x-csrf-token"];
   if (token && user.csrf_token && token === user.csrf_token) return true;
 
-  sendJson(response, 403, { error: "Token CSRF invalido." });
+  sendJson(response, 403, { error: "Token CSRF inválido." });
   return false;
 }
 
@@ -619,7 +618,7 @@ async function handleApi(request, response, url) {
 
   if (url.pathname === "/api/payments/asaas/webhook" && request.method === "POST") {
     if (!asaasWebhookToken || !safeTokenEquals(request.headers["asaas-access-token"], asaasWebhookToken)) {
-      sendJson(response, 401, { error: "Webhook nao autorizado." });
+      sendJson(response, 401, { error: "Webhook não autorizado." });
       return;
     }
 
@@ -628,14 +627,14 @@ async function handleApi(request, response, url) {
     const eventType = String(payload.event || "");
     const checkout = payload.checkout || {};
     if (!eventId || !eventType || !checkout.id) {
-      sendJson(response, 400, { error: "Evento de pagamento invalido." });
+      sendJson(response, 400, { error: "Evento de pagamento inválido." });
       return;
     }
 
     if (eventType === "CHECKOUT_PAID") {
       const matched = await applyPaidCheckout(eventId, checkout);
       if (!matched) {
-        sendJson(response, 404, { error: "Checkout nao reconhecido." });
+        sendJson(response, 404, { error: "Checkout não reconhecido." });
         return;
       }
     } else if (eventType === "CHECKOUT_CANCELED" || eventType === "CHECKOUT_EXPIRED") {
@@ -673,13 +672,13 @@ async function handleApi(request, response, url) {
     const password = String(payload.password || "");
 
     if (!username || password.length < 6) {
-      sendJson(response, 400, { error: "Informe usuario e senha com pelo menos 6 caracteres." });
+      sendJson(response, 400, { error: "Informe usuário e senha com pelo menos 6 caracteres." });
       return;
     }
 
     const existing = await get("SELECT id FROM users WHERE username = ?", [username]);
     if (existing) {
-      sendJson(response, 409, { error: "Usuario ja cadastrado." });
+      sendJson(response, 409, { error: "Usuário já cadastrado." });
       return;
     }
 
@@ -711,7 +710,7 @@ async function handleApi(request, response, url) {
     const user = await get("SELECT * FROM users WHERE username = ?", [login]);
 
     if (!user || !verifyPassword(password, user.password_salt, user.password_hash)) {
-      sendJson(response, 401, { error: "Usuario ou senha invalido." });
+      sendJson(response, 401, { error: "Usuário ou senha inválido." });
       return;
     }
 
@@ -774,19 +773,19 @@ async function handleApi(request, response, url) {
     const user = await requireUser(request, response);
     if (!user) return;
     if (!requireCsrf(request, response, user)) return;
-    if (isAdmin(user) || user.access_exempt) {
-      sendJson(response, 400, { error: "Esta conta possui acesso permanente e nao precisa comprar um plano." });
+    if (isAdmin(user)) {
+      sendJson(response, 400, { error: "A conta administrativa não precisa comprar um plano." });
       return;
     }
 
     const payload = await readJsonBody(request);
     const plan = subscriptionPlans[String(payload.planCode || "")];
     if (!plan) {
-      sendJson(response, 400, { error: "Plano invalido." });
+      sendJson(response, 400, { error: "Plano inválido." });
       return;
     }
     if (!paymentConfigurationReady) {
-      sendJson(response, 503, { error: "Pagamento temporariamente indisponivel." });
+      sendJson(response, 503, { error: "Pagamento temporariamente indisponível." });
       return;
     }
 
@@ -822,9 +821,9 @@ async function handleApi(request, response, url) {
           minutesToExpire: 60,
           externalReference: purchaseId,
           callback: {
-            successUrl: `${origin}/assinatura?payment=success`,
-            cancelUrl: `${origin}/assinatura?payment=canceled`,
-            expiredUrl: `${origin}/assinatura?payment=expired`
+            successUrl: `${origin}/assinaturas?payment=success`,
+            cancelUrl: `${origin}/assinaturas?payment=canceled`,
+            expiredUrl: `${origin}/assinaturas?payment=expired`
           },
           items: [{
             name: plan.name,
@@ -835,7 +834,7 @@ async function handleApi(request, response, url) {
         })
       });
       const checkoutId = String(checkout.id || "");
-      if (!checkoutId) throw new Error("A Asaas nao retornou o identificador do checkout.");
+      if (!checkoutId) throw new Error("A Asaas não retornou o identificador do checkout.");
       await run(
         "UPDATE access_purchases SET provider_checkout_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
         [checkoutId, purchaseId]
@@ -854,55 +853,27 @@ async function handleApi(request, response, url) {
     const user = await requireUser(request, response);
     if (!user) return;
     if (!requireAdmin(user, response)) return;
-    const rows = await all("SELECT id, name, username, role, access_exempt, access_until FROM users ORDER BY created_at ASC");
+    const rows = await all("SELECT id, name, username, role, access_until FROM users ORDER BY created_at ASC");
     sendJson(response, 200, { users: rows.map(publicUser) });
     return;
   }
 
   const userMatch = /^\/api\/users\/([^/]+)$/.exec(url.pathname);
-  const userAccessMatch = /^\/api\/users\/([^/]+)\/access$/.exec(url.pathname);
-  if (userAccessMatch && request.method === "PATCH") {
-    const user = await requireUser(request, response);
-    if (!user) return;
-    if (!requireCsrf(request, response, user)) return;
-    if (!requireAdmin(user, response)) return;
-    const targetUserId = userAccessMatch[1];
-    if (!requireUuid(targetUserId, response, "Usuario")) return;
-    const target = await get("SELECT * FROM users WHERE id = ?", [targetUserId]);
-    if (!target) {
-      sendJson(response, 404, { error: "Usuario nao encontrado." });
-      return;
-    }
-    if (isAdmin(target)) {
-      sendJson(response, 400, { error: "Contas admin sempre possuem acesso administrativo." });
-      return;
-    }
-    const payload = await readJsonBody(request);
-    if (typeof payload.exempt !== "boolean") {
-      sendJson(response, 400, { error: "Informe se o usuario tera acesso permanente." });
-      return;
-    }
-    await run("UPDATE users SET access_exempt = ? WHERE id = ?", [payload.exempt, targetUserId]);
-    const updated = await get("SELECT * FROM users WHERE id = ?", [targetUserId]);
-    sendJson(response, 200, { user: publicUser(updated) });
-    return;
-  }
-
   if (userMatch && request.method === "DELETE") {
     const user = await requireUser(request, response);
     if (!user) return;
     if (!requireCsrf(request, response, user)) return;
     if (!requireAdmin(user, response)) return;
     const targetUserId = userMatch[1];
-    if (!requireUuid(targetUserId, response, "Usuario")) return;
+    if (!requireUuid(targetUserId, response, "Usuário")) return;
     if (targetUserId === user.id) {
-      sendJson(response, 400, { error: "O admin nao pode remover a propria conta." });
+      sendJson(response, 400, { error: "O administrador não pode remover a própria conta." });
       return;
     }
 
     const result = await run("DELETE FROM users WHERE id = ?", [targetUserId]);
     if (result.changes === 0) {
-      sendJson(response, 404, { error: "Usuario nao encontrado." });
+      sendJson(response, 404, { error: "Usuário não encontrado." });
       return;
     }
     sendJson(response, 200, { ok: true, deleted: result.changes });
@@ -942,7 +913,7 @@ async function handleApi(request, response, url) {
     let photoSlides;
     let photoEditStates;
 
-    if (!requireUuid(targetUserId, response, "Usuario destino")) return;
+    if (!requireUuid(targetUserId, response, "Usuário de destino")) return;
 
     if (!displayName || !cpf) {
       sendJson(response, 400, { error: "Informe Nome exibido e CPF." });
@@ -959,7 +930,7 @@ async function handleApi(request, response, url) {
 
     const targetUser = await get("SELECT id FROM users WHERE id = ?", [targetUserId]);
     if (!targetUser) {
-      sendJson(response, 404, { error: "Usuario de destino nao encontrado." });
+      sendJson(response, 404, { error: "Usuário de destino não encontrado." });
       return;
     }
 
@@ -990,24 +961,24 @@ async function handleApi(request, response, url) {
     const payload = await readJsonBody(request);
     const targetUserId = String(payload.targetUserId || "");
     if (!targetUserId) {
-      sendJson(response, 400, { error: "Selecione o usuario destino." });
+      sendJson(response, 400, { error: "Selecione o usuário de destino." });
       return;
     }
-    if (!requireUuid(targetUserId, response, "Usuario destino")) return;
+    if (!requireUuid(targetUserId, response, "Usuário de destino")) return;
 
     const identity = await get("SELECT id, user_id FROM identities WHERE id = ?", [identityId]);
     if (!identity) {
-      sendJson(response, 404, { error: "Identidade nao encontrada." });
+      sendJson(response, 404, { error: "Identidade não encontrada." });
       return;
     }
     if (targetUserId === identity.user_id) {
-      sendJson(response, 400, { error: "A identidade ja pertence a este usuario." });
+      sendJson(response, 400, { error: "A identidade já pertence a este usuário." });
       return;
     }
 
     const targetUser = await get("SELECT id FROM users WHERE id = ?", [targetUserId]);
     if (!targetUser) {
-      sendJson(response, 404, { error: "Usuario de destino nao encontrado." });
+      sendJson(response, 404, { error: "Usuário de destino não encontrado." });
       return;
     }
 
@@ -1036,7 +1007,7 @@ async function handleApi(request, response, url) {
     if (Object.prototype.hasOwnProperty.call(payload, "title")) {
       const title = String(payload.title || "").trim();
       if (!title) {
-        sendJson(response, 400, { error: "Informe um titulo valido." });
+        sendJson(response, 400, { error: "Informe um título válido." });
         return;
       }
       updates.push("title = ?");
@@ -1046,7 +1017,7 @@ async function handleApi(request, response, url) {
     if (Object.prototype.hasOwnProperty.call(payload, "displayName")) {
       const displayName = String(payload.displayName || "").trim();
       if (!displayName || displayName.length > 180) {
-        sendJson(response, 400, { error: "Informe um nome completo valido." });
+        sendJson(response, 400, { error: "Informe um nome completo válido." });
         return;
       }
       updates.push("full_name = ?");
@@ -1056,7 +1027,7 @@ async function handleApi(request, response, url) {
     if (Object.prototype.hasOwnProperty.call(payload, "cpf")) {
       const cpf = String(payload.cpf || "").trim();
       if (!cpf || cpf.length > 32) {
-        sendJson(response, 400, { error: "Informe um CPF valido." });
+        sendJson(response, 400, { error: "Informe um CPF válido." });
         return;
       }
       updates.push("cpf = ?");
@@ -1086,7 +1057,7 @@ async function handleApi(request, response, url) {
     }
 
     if (!updates.length) {
-      sendJson(response, 400, { error: "Nenhuma alteracao informada." });
+      sendJson(response, 400, { error: "Nenhuma alteração informada." });
       return;
     }
 
@@ -1096,7 +1067,7 @@ async function handleApi(request, response, url) {
       ? await run(`UPDATE identities SET ${updates.join(", ")} WHERE id = ?`, params)
       : await run(`UPDATE identities SET ${updates.join(", ")} WHERE id = ? AND user_id = ?`, [...params, user.id]);
     if (result.changes === 0) {
-      sendJson(response, 404, { error: "Identidade nao encontrada." });
+      sendJson(response, 404, { error: "Identidade não encontrada." });
       return;
     }
 
@@ -1120,14 +1091,14 @@ async function handleApi(request, response, url) {
       ? await run("DELETE FROM identities WHERE id = ?", [identityId])
       : await run("DELETE FROM identities WHERE id = ? AND user_id = ?", [identityId, user.id]);
     if (result.changes === 0) {
-      sendJson(response, 404, { error: "Identidade nao encontrada." });
+      sendJson(response, 404, { error: "Identidade não encontrada." });
       return;
     }
     sendJson(response, 200, { ok: true, deleted: result.changes });
     return;
   }
 
-  sendJson(response, 404, { error: "Rota nao encontrada" });
+  sendJson(response, 404, { error: "Rota não encontrada" });
 }
 
 async function serveStatic(request, response, url) {
@@ -1138,8 +1109,13 @@ async function serveStatic(request, response, url) {
     return;
   }
 
-  const appRoutes = new Set(["/auth", "/assinatura", "/dashboard", "/identidadefake"]);
-  const protectedAppRoutes = new Set(["/assinatura", "/dashboard", "/identidadefake"]);
+  if (url.pathname === "/assinatura") {
+    redirect(response, `/assinaturas${url.search}`);
+    return;
+  }
+
+  const appRoutes = new Set(["/auth", "/assinaturas", "/dashboard", "/identidadefake"]);
+  const protectedAppRoutes = new Set(["/assinaturas", "/dashboard", "/identidadefake"]);
   const paidAppRoutes = new Set(["/dashboard", "/identidadefake"]);
 
   if (protectedAppRoutes.has(url.pathname)) {
@@ -1149,10 +1125,10 @@ async function serveStatic(request, response, url) {
       return;
     }
     if (paidAppRoutes.has(url.pathname) && !hasProductAccess(user)) {
-      redirect(response, "/assinatura");
+      redirect(response, "/assinaturas");
       return;
     }
-    if (url.pathname === "/assinatura" && hasProductAccess(user) && url.searchParams.get("preview") !== "1") {
+    if (url.pathname === "/assinaturas" && hasProductAccess(user) && url.searchParams.get("preview") !== "1") {
       redirect(response, "/dashboard");
       return;
     }
@@ -1161,7 +1137,7 @@ async function serveStatic(request, response, url) {
   if (url.pathname === "/auth") {
     const user = await getUserFromRequest(request);
     if (user) {
-      redirect(response, hasProductAccess(user) ? "/dashboard" : "/assinatura");
+      redirect(response, hasProductAccess(user) ? "/dashboard" : "/assinaturas");
       return;
     }
   }

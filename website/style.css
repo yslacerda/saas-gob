@@ -81,16 +81,16 @@ button:disabled {
   gap: 10px;
   min-height: 48px;
   padding: 8px 18px;
-  border-top: 2px solid #f59e0b;
-  background: #111827;
-  color: #fff;
+  border-top: 2px solid #4ba3d3;
+  background: linear-gradient(90deg, #102a43 0%, #174a70 50%, #102a43 100%);
+  color: #edf7ff;
   text-align: center;
   font-size: 12px;
-  box-shadow: 0 -6px 18px rgba(15, 23, 42, 0.2);
+  box-shadow: 0 -6px 18px rgba(16, 42, 67, 0.24);
 }
 
 .simulator-notice strong {
-  color: #fcd34d;
+  color: #9cddff;
   letter-spacing: 0.04em;
 }
 
