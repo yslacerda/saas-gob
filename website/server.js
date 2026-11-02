@@ -12,13 +12,23 @@ const sessionMaxAgeMs = 7 * 24 * 60 * 60 * 1000;
 const maxJsonBodyLength = 50_000_000;
 const allowBootstrapAdmin = process.env.ALLOW_BOOTSTRAP_ADMIN === "true";
 const secureCookies = process.env.NODE_ENV === "production" || process.env.SECURE_COOKIES === "true";
+const asaasApiKey = process.env.ASAAS_API_KEY || "";
+const asaasApiBaseUrl = String(process.env.ASAAS_API_BASE_URL || "https://api-sandbox.asaas.com/v3").replace(/\/+$/, "");
+const asaasCheckoutBaseUrl = String(process.env.ASAAS_CHECKOUT_BASE_URL || "https://asaas.com/checkoutSession/show");
+const asaasWebhookToken = process.env.ASAAS_WEBHOOK_TOKEN || "";
+const appBaseUrl = String(process.env.APP_BASE_URL || "").replace(/\/+$/, "");
+const paymentConfigurationReady = Boolean(asaasApiKey && asaasWebhookToken.length >= 32 && /^https?:\/\//i.test(appBaseUrl));
 const authRateLimitWindowMs = 15 * 60 * 1000;
 const authRateLimitMaxAttempts = 20;
 const minPhotoSlideCount = 3;
-const maxPhotoSlideCount = 4;
+const maxPhotoSlideCount = 3;
 const maxPhotoDataUrlLength = 5_600_000;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const authAttempts = new Map();
+const subscriptionPlans = Object.freeze({
+  monthly: Object.freeze({ code: "monthly", name: "Acesso mensal", amountCents: 3999, durationDays: 30 }),
+  quarterly: Object.freeze({ code: "quarterly", name: "Acesso trimestral", amountCents: 5999, durationDays: 90 })
+});
 const acceptedPhotoMimeTypes = new Set([
   "image/jpeg",
   "image/png",
@@ -115,6 +125,10 @@ const ready = (async () => {
   `);
   await run("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user'");
   await run("ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT");
+  // Na primeira execucao, preserva o acesso das contas que ja existiam. Novas contas usam o default false.
+  await run("ALTER TABLE users ADD COLUMN IF NOT EXISTS access_exempt BOOLEAN NOT NULL DEFAULT TRUE");
+  await run("ALTER TABLE users ALTER COLUMN access_exempt SET DEFAULT FALSE");
+  await run("ALTER TABLE users ADD COLUMN IF NOT EXISTS access_until TIMESTAMPTZ");
   await run("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('user', 'admin'))").catch(ignoreDuplicateObject);
   await run("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)");
   await run(`
@@ -147,9 +161,36 @@ const ready = (async () => {
   await run("ALTER TABLE identities ADD COLUMN IF NOT EXISTS photo_slides_json TEXT");
   await run("ALTER TABLE identities ADD COLUMN IF NOT EXISTS photo_edit_states_json TEXT");
   await run("CREATE INDEX IF NOT EXISTS idx_identities_user_id ON identities(user_id)");
+  await run(`
+    CREATE TABLE IF NOT EXISTS access_purchases (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      plan_code TEXT NOT NULL CHECK (plan_code IN ('monthly', 'quarterly')),
+      amount_cents INTEGER NOT NULL,
+      duration_days INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'canceled', 'expired', 'failed')),
+      provider TEXT NOT NULL DEFAULT 'asaas',
+      provider_checkout_id TEXT UNIQUE,
+      paid_at TIMESTAMPTZ,
+      access_from TIMESTAMPTZ,
+      access_until TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await run("CREATE INDEX IF NOT EXISTS idx_access_purchases_user_id ON access_purchases(user_id)");
+  await run(`
+    CREATE TABLE IF NOT EXISTS payment_webhook_events (
+      id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      received_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
   await run("ALTER TABLE users ENABLE ROW LEVEL SECURITY");
   await run("ALTER TABLE sessions ENABLE ROW LEVEL SECURITY");
   await run("ALTER TABLE identities ENABLE ROW LEVEL SECURITY");
+  await run("ALTER TABLE access_purchases ENABLE ROW LEVEL SECURITY");
+  await run("ALTER TABLE payment_webhook_events ENABLE ROW LEVEL SECURITY");
   await removeAutomaticExampleIdentities();
   const admin = await get("SELECT id FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1");
   if (!admin && allowBootstrapAdmin) {
@@ -320,11 +361,19 @@ function normalizeUsername(value) {
 }
 
 function publicUser(row) {
+  const accessUntil = row.access_until ? new Date(row.access_until) : null;
+  const accessExempt = Boolean(row.access_exempt);
+  const hasAccess = (row.role || "user") === "admin" || accessExempt || (accessUntil && accessUntil.getTime() > Date.now());
   return {
     id: row.id,
     name: row.name,
     username: row.username,
-    role: row.role || "user"
+    role: row.role || "user",
+    access: {
+      active: Boolean(hasAccess),
+      exempt: accessExempt || (row.role || "user") === "admin",
+      until: accessUntil ? accessUntil.toISOString() : null
+    }
   };
 }
 
@@ -369,7 +418,7 @@ function validatePhotoEditStates(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Os dados de edicao das fotos sao invalidos.");
   }
-  const allowedKeys = new Set(["front", "back", "signature", "qr"]);
+  const allowedKeys = new Set(["front", "back", "signature"]);
   const result = {};
   for (const [key, edit] of Object.entries(value)) {
     if (!allowedKeys.has(key) || edit === null) continue;
@@ -392,7 +441,7 @@ function validatePhotoEditStates(value) {
 
 function validatePhotoSlides(value) {
   if (!Array.isArray(value) || value.length < minPhotoSlideCount || value.length > maxPhotoSlideCount) {
-    throw new Error("Anexe 3 fotos obrigatorias: Frente, Verso e Assinatura. O quarto QR e opcional.");
+    throw new Error("Anexe exatamente 3 fotos: Frente, Verso e Assinatura. O QR e fixo no simulador.");
   }
 
   return value.map((slide, index) => {
@@ -416,6 +465,103 @@ function requireAdmin(user, response) {
   if (isAdmin(user)) return true;
   sendJson(response, 403, { error: "Permissao insuficiente." });
   return false;
+}
+
+function hasProductAccess(user) {
+  if (!user) return false;
+  if (isAdmin(user) || user.access_exempt) return true;
+  return Boolean(user.access_until && new Date(user.access_until).getTime() > Date.now());
+}
+
+function requireProductAccess(user, response) {
+  if (hasProductAccess(user)) return true;
+  sendJson(response, 402, { error: "Assinatura necessaria para acessar este recurso.", code: "SUBSCRIPTION_REQUIRED" });
+  return false;
+}
+
+function safeTokenEquals(actual, expected) {
+  const actualBuffer = Buffer.from(String(actual || ""));
+  const expectedBuffer = Buffer.from(String(expected || ""));
+  return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+function requestOrigin(request) {
+  if (appBaseUrl) return appBaseUrl;
+  const protocol = String(request.headers["x-forwarded-proto"] || (secureCookies ? "https" : "http")).split(",")[0];
+  return `${protocol}://${request.headers.host}`;
+}
+
+async function asaasRequest(pathname, options = {}) {
+  if (!asaasApiKey) throw new Error("Pagamento indisponivel: ASAAS_API_KEY nao configurada.");
+  const response = await fetch(`${asaasApiBaseUrl}${pathname}`, {
+    ...options,
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "user-agent": "GovFake-Simulador/1.0",
+      access_token: asaasApiKey,
+      ...(options.headers || {})
+    }
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const description = Array.isArray(payload.errors) ? payload.errors.map((item) => item.description).filter(Boolean).join(" ") : "";
+    throw new Error(description || `Falha na Asaas (${response.status}).`);
+  }
+  return payload;
+}
+
+async function applyPaidCheckout(eventId, checkout) {
+  const checkoutId = String(checkout && checkout.id || "");
+  if (!checkoutId) return false;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const inserted = await client.query(
+      "INSERT INTO payment_webhook_events (id, event_type) VALUES ($1, 'CHECKOUT_PAID') ON CONFLICT (id) DO NOTHING RETURNING id",
+      [eventId]
+    );
+    if (inserted.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return true;
+    }
+
+    const purchaseResult = await client.query(
+      "SELECT * FROM access_purchases WHERE provider_checkout_id = $1 FOR UPDATE",
+      [checkoutId]
+    );
+    const purchase = purchaseResult.rows[0];
+    if (!purchase) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    if (purchase.status !== "pending") {
+      await client.query("COMMIT");
+      return true;
+    }
+
+    const accessResult = await client.query(`
+      UPDATE users
+      SET access_until = GREATEST(COALESCE(access_until, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP) + ($1 * INTERVAL '1 day')
+      WHERE id = $2
+      RETURNING access_until
+    `, [purchase.duration_days, purchase.user_id]);
+    const accessUntil = accessResult.rows[0].access_until;
+    await client.query(`
+      UPDATE access_purchases
+      SET status = 'paid', paid_at = CURRENT_TIMESTAMP,
+          access_from = CURRENT_TIMESTAMP, access_until = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+    `, [accessUntil, purchase.id]);
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function createSession(userId) {
@@ -468,7 +614,49 @@ function requireCsrf(request, response, user) {
 async function handleApi(request, response, url) {
   await ready;
 
+  if (url.pathname === "/api/payments/asaas/webhook" && request.method === "POST") {
+    if (!asaasWebhookToken || !safeTokenEquals(request.headers["asaas-access-token"], asaasWebhookToken)) {
+      sendJson(response, 401, { error: "Webhook nao autorizado." });
+      return;
+    }
+
+    const payload = await readJsonBody(request);
+    const eventId = String(payload.id || "");
+    const eventType = String(payload.event || "");
+    const checkout = payload.checkout || {};
+    if (!eventId || !eventType || !checkout.id) {
+      sendJson(response, 400, { error: "Evento de pagamento invalido." });
+      return;
+    }
+
+    if (eventType === "CHECKOUT_PAID") {
+      const matched = await applyPaidCheckout(eventId, checkout);
+      if (!matched) {
+        sendJson(response, 404, { error: "Checkout nao reconhecido." });
+        return;
+      }
+    } else if (eventType === "CHECKOUT_CANCELED" || eventType === "CHECKOUT_EXPIRED") {
+      const nextStatus = eventType === "CHECKOUT_CANCELED" ? "canceled" : "expired";
+      await run(
+        "UPDATE access_purchases SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE provider_checkout_id = ? AND status = 'pending'",
+        [nextStatus, String(checkout.id)]
+      );
+      await run(
+        "INSERT INTO payment_webhook_events (id, event_type) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
+        [eventId, eventType]
+      );
+    }
+
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
   if (rejectCrossOriginMutation(request, response)) return;
+
+  if (url.pathname.startsWith("/api/identities")) {
+    const accessUser = await requireUser(request, response);
+    if (!accessUser || !requireProductAccess(accessUser, response)) return;
+  }
 
   if (url.pathname === "/api/auth/register" && request.method === "POST") {
     if (isRateLimited(request, "register")) {
@@ -502,7 +690,7 @@ async function handleApi(request, response, url) {
     );
 
     const session = await createSession(userId);
-    sendJson(response, 201, { user: { id: userId, name, username, role }, csrfToken: session.csrfToken }, {
+    sendJson(response, 201, { user: publicUser({ id: userId, name, username, role, access_exempt: false, access_until: null }), csrfToken: session.csrfToken }, {
       "Set-Cookie": sessionCookie(session.token, Math.floor(sessionMaxAgeMs / 1000))
     });
     return;
@@ -551,16 +739,152 @@ async function handleApi(request, response, url) {
     return;
   }
 
+  if (url.pathname === "/api/billing/status" && request.method === "GET") {
+    const user = await requireUser(request, response);
+    if (!user) return;
+    const latestPurchase = await get(`
+      SELECT id, plan_code, amount_cents, status, provider_checkout_id, created_at, paid_at, access_until
+      FROM access_purchases
+      WHERE user_id = ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `, [user.id]);
+    sendJson(response, 200, {
+      user: publicUser(user),
+      plans: Object.values(subscriptionPlans),
+      latestPurchase: latestPurchase ? {
+        id: latestPurchase.id,
+        planCode: latestPurchase.plan_code,
+        amountCents: latestPurchase.amount_cents,
+        status: latestPurchase.status,
+        checkoutId: latestPurchase.provider_checkout_id,
+        createdAt: latestPurchase.created_at,
+        paidAt: latestPurchase.paid_at,
+        accessUntil: latestPurchase.access_until
+      } : null,
+      paymentConfigured: paymentConfigurationReady
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/billing/checkout" && request.method === "POST") {
+    const user = await requireUser(request, response);
+    if (!user) return;
+    if (!requireCsrf(request, response, user)) return;
+    if (isAdmin(user) || user.access_exempt) {
+      sendJson(response, 400, { error: "Esta conta possui acesso permanente e nao precisa comprar um plano." });
+      return;
+    }
+
+    const payload = await readJsonBody(request);
+    const plan = subscriptionPlans[String(payload.planCode || "")];
+    if (!plan) {
+      sendJson(response, 400, { error: "Plano invalido." });
+      return;
+    }
+    if (!paymentConfigurationReady) {
+      sendJson(response, 503, { error: "Pagamento temporariamente indisponivel." });
+      return;
+    }
+
+    const reusablePurchase = await get(`
+      SELECT id, provider_checkout_id
+      FROM access_purchases
+      WHERE user_id = ? AND plan_code = ? AND status = 'pending'
+        AND provider_checkout_id IS NOT NULL
+        AND created_at > CURRENT_TIMESTAMP - INTERVAL '60 minutes'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `, [user.id, plan.code]);
+    if (reusablePurchase) {
+      const checkoutUrl = new URL(asaasCheckoutBaseUrl);
+      checkoutUrl.searchParams.set("id", reusablePurchase.provider_checkout_id);
+      sendJson(response, 200, { purchaseId: reusablePurchase.id, checkoutUrl: checkoutUrl.toString(), reused: true });
+      return;
+    }
+
+    const purchaseId = crypto.randomUUID();
+    await run(`
+      INSERT INTO access_purchases (id, user_id, plan_code, amount_cents, duration_days)
+      VALUES (?, ?, ?, ?, ?)
+    `, [purchaseId, user.id, plan.code, plan.amountCents, plan.durationDays]);
+
+    const origin = requestOrigin(request);
+    try {
+      const checkout = await asaasRequest("/checkouts", {
+        method: "POST",
+        body: JSON.stringify({
+          billingTypes: ["PIX"],
+          chargeTypes: ["DETACHED"],
+          minutesToExpire: 60,
+          externalReference: purchaseId,
+          callback: {
+            successUrl: `${origin}/assinatura?payment=success`,
+            cancelUrl: `${origin}/assinatura?payment=canceled`,
+            expiredUrl: `${origin}/assinatura?payment=expired`
+          },
+          items: [{
+            name: plan.name,
+            description: `${plan.durationDays} dias de acesso ao simulador`,
+            quantity: 1,
+            value: plan.amountCents / 100
+          }]
+        })
+      });
+      const checkoutId = String(checkout.id || "");
+      if (!checkoutId) throw new Error("A Asaas nao retornou o identificador do checkout.");
+      await run(
+        "UPDATE access_purchases SET provider_checkout_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        [checkoutId, purchaseId]
+      );
+      const checkoutUrl = new URL(asaasCheckoutBaseUrl);
+      checkoutUrl.searchParams.set("id", checkoutId);
+      sendJson(response, 201, { purchaseId, checkoutUrl: checkoutUrl.toString() });
+    } catch (error) {
+      await run("UPDATE access_purchases SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [purchaseId]);
+      sendJson(response, 502, { error: error.message });
+    }
+    return;
+  }
+
   if (url.pathname === "/api/users" && request.method === "GET") {
     const user = await requireUser(request, response);
     if (!user) return;
     if (!requireAdmin(user, response)) return;
-    const rows = await all("SELECT id, name, username, role FROM users ORDER BY created_at ASC");
+    const rows = await all("SELECT id, name, username, role, access_exempt, access_until FROM users ORDER BY created_at ASC");
     sendJson(response, 200, { users: rows.map(publicUser) });
     return;
   }
 
   const userMatch = /^\/api\/users\/([^/]+)$/.exec(url.pathname);
+  const userAccessMatch = /^\/api\/users\/([^/]+)\/access$/.exec(url.pathname);
+  if (userAccessMatch && request.method === "PATCH") {
+    const user = await requireUser(request, response);
+    if (!user) return;
+    if (!requireCsrf(request, response, user)) return;
+    if (!requireAdmin(user, response)) return;
+    const targetUserId = userAccessMatch[1];
+    if (!requireUuid(targetUserId, response, "Usuario")) return;
+    const target = await get("SELECT * FROM users WHERE id = ?", [targetUserId]);
+    if (!target) {
+      sendJson(response, 404, { error: "Usuario nao encontrado." });
+      return;
+    }
+    if (isAdmin(target)) {
+      sendJson(response, 400, { error: "Contas admin sempre possuem acesso administrativo." });
+      return;
+    }
+    const payload = await readJsonBody(request);
+    if (typeof payload.exempt !== "boolean") {
+      sendJson(response, 400, { error: "Informe se o usuario tera acesso permanente." });
+      return;
+    }
+    await run("UPDATE users SET access_exempt = ? WHERE id = ?", [payload.exempt, targetUserId]);
+    const updated = await get("SELECT * FROM users WHERE id = ?", [targetUserId]);
+    sendJson(response, 200, { user: publicUser(updated) });
+    return;
+  }
+
   if (userMatch && request.method === "DELETE") {
     const user = await requireUser(request, response);
     if (!user) return;
@@ -811,8 +1135,9 @@ async function serveStatic(request, response, url) {
     return;
   }
 
-  const appRoutes = new Set(["/auth", "/dashboard", "/identidadefake"]);
-  const protectedAppRoutes = new Set(["/dashboard", "/identidadefake"]);
+  const appRoutes = new Set(["/auth", "/assinatura", "/dashboard", "/identidadefake"]);
+  const protectedAppRoutes = new Set(["/assinatura", "/dashboard", "/identidadefake"]);
+  const paidAppRoutes = new Set(["/dashboard", "/identidadefake"]);
 
   if (protectedAppRoutes.has(url.pathname)) {
     const user = await getUserFromRequest(request);
@@ -820,12 +1145,20 @@ async function serveStatic(request, response, url) {
       redirect(response, "/auth");
       return;
     }
+    if (paidAppRoutes.has(url.pathname) && !hasProductAccess(user)) {
+      redirect(response, "/assinatura");
+      return;
+    }
+    if (url.pathname === "/assinatura" && hasProductAccess(user) && url.searchParams.get("preview") !== "1") {
+      redirect(response, "/dashboard");
+      return;
+    }
   }
 
   if (url.pathname === "/auth") {
     const user = await getUserFromRequest(request);
     if (user) {
-      redirect(response, "/dashboard");
+      redirect(response, hasProductAccess(user) ? "/dashboard" : "/assinatura");
       return;
     }
   }

@@ -37,11 +37,10 @@ const documentPages = [
 const documentPhotoSteps = [
   { key: "front", label: "Frente" },
   { key: "back", label: "Verso" },
-  { key: "signature", label: "Assinatura" },
-  { key: "qr", label: "QR padrao" }
+  { key: "signature", label: "Assinatura" }
 ];
 
-const requiredDocumentUploadSteps = documentPhotoSteps.slice(0, 3);
+const requiredDocumentUploadSteps = documentPhotoSteps;
 const documentUploadSteps = documentPhotoSteps;
 
 const acceptedPhotoTypes = "image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif,image/bmp";
@@ -55,6 +54,7 @@ const documentCrop = {
 const cropEraseBackground = "#f7f5e9";
 const cropPencilColor = "#e7e7c3";
 const cropEraseFillColor = cropPencilColor;
+const defaultPencilSize = 1.5;
 const maxCropZoom = 30;
 
 const referenceView = {
@@ -123,6 +123,10 @@ async function api(path, options = {}) {
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (response.status === 402 && payload.code === "SUBSCRIPTION_REQUIRED") {
+      if (state.user && state.user.access) state.user.access.active = false;
+      if (window.location.pathname !== "/assinatura") goTo("/assinatura", true);
+    }
     throw new Error(payload.error || "Falha na requisicao");
   }
   return payload;
@@ -171,7 +175,11 @@ function isAdmin() {
 }
 
 function renderShell(content) {
-  app.innerHTML = content;
+  app.innerHTML = `${content}
+    <footer class="simulator-notice">
+      <strong>SIMULADOR — SEM VALIDADE DOCUMENTAL</strong>
+      <span>Projeto independente, sem vinculo com gov.br, Governo Federal ou qualquer orgao publico.</span>
+    </footer>`;
   bindEvents();
 }
 
@@ -235,9 +243,91 @@ function renderAuthPage(message = "") {
   `);
 }
 
+async function renderSubscriptionPage() {
+  const hasUser = await ensureUser();
+  if (!hasUser) {
+    goTo("/auth", true);
+    return;
+  }
+
+  const billing = await api("/api/billing/status");
+  state.user = billing.user;
+  const isPreview = new URLSearchParams(window.location.search).get("preview") === "1";
+  if (state.user.access && state.user.access.active && !isPreview) {
+    goTo("/dashboard", true);
+    return;
+  }
+
+  const paymentResult = new URLSearchParams(window.location.search).get("payment");
+  const resultMessages = {
+    success: "Pix concluido. Estamos aguardando a confirmacao segura da Asaas para liberar seu acesso.",
+    canceled: "Pagamento cancelado. Voce pode escolher um plano e tentar novamente.",
+    expired: "O checkout expirou. Gere um novo Pix para continuar."
+  };
+  const purchaseStatus = billing.latestPurchase && billing.latestPurchase.status;
+  const paymentMessage = resultMessages[paymentResult]
+    || (purchaseStatus === "pending" ? "Existe um checkout aguardando pagamento ou confirmacao." : "");
+  const canPurchase = billing.paymentConfigured && !(state.user.access && state.user.access.exempt);
+
+  renderShell(`
+    <section class="subscription-page">
+      <header class="subscription-header">
+        <div>
+          <span class="subscription-brand">Gov.Fake</span>
+          <h1>Escolha seu periodo de acesso</h1>
+          <p>Pagamento unico por Pix. Sem cartao, renovacao automatica ou cobranca surpresa.</p>
+        </div>
+        <div class="header-actions">
+          <span>@${escapeHtml(state.user.username || state.user.name)}</span>
+          <button class="ghost-btn" id="logoutButton" type="button">Sair</button>
+        </div>
+      </header>
+
+      ${isPreview ? `<p class="billing-message" role="status">Previa administrativa da tela de planos. Sua conta continua com acesso permanente.</p>` : ""}
+      ${paymentMessage ? `<p class="billing-message" role="status">${escapeHtml(paymentMessage)}</p>` : ""}
+      ${billing.paymentConfigured ? "" : `<p class="billing-message error" role="alert">O pagamento ainda nao foi configurado pelo administrador.</p>`}
+
+      <main class="pricing-grid">
+        <article class="pricing-card">
+          <span class="plan-kicker">30 dias</span>
+          <h2>Mensal</h2>
+          <div class="plan-price"><strong>R$ 39,99</strong><span>pagamento unico</span></div>
+          <ul>
+            <li>Acesso completo por 30 dias</li>
+            <li>Pagamento seguro via Pix</li>
+            <li>Renovacao manual</li>
+          </ul>
+          <button class="primary-btn plan-button" type="button" data-plan-code="monthly" ${canPurchase ? "" : "disabled"}>Pagar com Pix</button>
+        </article>
+
+        <article class="pricing-card featured">
+          <span class="best-value">Melhor economia</span>
+          <span class="plan-kicker">90 dias</span>
+          <h2>Trimestral</h2>
+          <div class="price-comparison"><s>3 mensais: R$ 119,97</s><strong>Economize R$ 59,98</strong></div>
+          <div class="plan-price"><strong>R$ 59,99</strong><span>pagamento unico</span></div>
+          <ul>
+            <li>Acesso completo por 90 dias</li>
+            <li>50% de economia frente a 3 mensalidades</li>
+            <li>Pagamento seguro via Pix</li>
+          </ul>
+          <button class="primary-btn plan-button" type="button" data-plan-code="quarterly" ${canPurchase ? "" : "disabled"}>Escolher trimestral</button>
+        </article>
+      </main>
+
+      <p class="payment-footnote">O pagamento e processado no Checkout Asaas. O acesso so e liberado apos confirmacao por webhook.</p>
+    </section>
+  `);
+
+  if (paymentResult === "success" && purchaseStatus === "pending") {
+    window.setTimeout(() => {
+      if (window.location.pathname === "/assinatura") renderSubscriptionPage();
+    }, 2500);
+  }
+}
+
 function identityCard(identity) {
   const hasRequiredPhotos = identity.photoSlides && identity.photoSlides.length >= requiredDocumentUploadSteps.length;
-  const hasCustomQr = identity.photoSlides && identity.photoSlides.length >= documentPhotoSteps.length;
 
   return `
     <article class="identity-card">
@@ -246,7 +336,7 @@ function identityCard(identity) {
         <h3>${escapeHtml(identity.title)}</h3>
         <strong>${escapeHtml(identity.displayName || "Nome nao informado")}</strong>
         <small>CPF: ${escapeHtml(identity.cpf || "Nao informado")}</small>
-        <small>${hasRequiredPhotos ? `3 fotos + ${hasCustomQr ? "QR editado" : "QR padrao"}` : "Sem fotos anexadas"}</small>
+        <small>${hasRequiredPhotos ? "3 fotos + QR fixo sem validade" : "Sem fotos anexadas"}</small>
         ${isAdmin() ? `<em>@${escapeHtml(identity.ownerUsername || identity.ownerName || "usuario")}</em>` : ""}
       </div>
       <div class="identity-actions">
@@ -278,13 +368,24 @@ function adminUserList() {
           ? state.users.map((user) => {
             const identityCount = state.identities.filter((identity) => identity.userId === user.id).length;
             const isCurrentUser = user.id === state.user.id;
+            const isUserAdmin = user.role === "admin";
+            const accessLabel = isUserAdmin
+              ? "acesso administrativo"
+              : user.access && user.access.exempt
+                ? "acesso permanente"
+                : user.access && user.access.active
+                  ? `ativo ate ${new Date(user.access.until).toLocaleDateString("pt-BR")}`
+                  : "assinatura necessaria";
             return `
               <article class="user-card">
                 <div>
                   <strong>@${escapeHtml(user.username || user.name)}</strong>
-                  <small>${escapeHtml(user.role || "user")} - ${identityCount} identidade${identityCount === 1 ? "" : "s"}</small>
+                  <small>${escapeHtml(user.role || "user")} - ${identityCount} identidade${identityCount === 1 ? "" : "s"} - ${escapeHtml(accessLabel)}</small>
                 </div>
-                <button class="danger-btn" type="button" data-remove-user="${escapeHtml(user.id)}" ${isCurrentUser ? "disabled" : ""}>Remover</button>
+                <div class="user-card-actions">
+                  ${isUserAdmin ? "" : `<button class="secondary-btn" type="button" data-toggle-access="${escapeHtml(user.id)}" data-access-exempt="${user.access && user.access.exempt ? "true" : "false"}">${user.access && user.access.exempt ? "Exigir assinatura" : "Liberar permanente"}</button>`}
+                  <button class="danger-btn" type="button" data-remove-user="${escapeHtml(user.id)}" ${isCurrentUser ? "disabled" : ""}>Remover</button>
+                </div>
               </article>
             `;
           }).join("")
@@ -298,6 +399,10 @@ async function renderDashboardPage() {
   const hasUser = await ensureUser();
   if (!hasUser) {
     goTo("/auth", true);
+    return;
+  }
+  if (!state.user.access || !state.user.access.active) {
+    goTo("/assinatura", true);
     return;
   }
 
@@ -317,6 +422,7 @@ async function renderDashboardPage() {
         </div>
         <div class="header-actions">
           <span>@${escapeHtml(state.user.username || state.user.name)}${isAdmin() ? " - admin" : ""}</span>
+          ${isAdmin() ? `<button class="ghost-btn" id="previewPlansButton" type="button">Ver planos</button>` : ""}
           <button class="ghost-btn" id="logoutButton" type="button">Sair</button>
         </div>
       </header>
@@ -369,12 +475,12 @@ async function renderDashboardPage() {
               </label>
             </div>
             <div class="ordered-uploads" aria-label="Fotos da identidade em ordem">
-              <p class="form-note">Anexe as 3 fotos obrigatorias: Frente, Verso e Assinatura. O QR padrao entra automaticamente no quarto slide; envie uma quarta imagem apenas se quiser ajustar as bordas.</p>
+              <p class="form-note">Anexe as 3 fotos obrigatorias: Frente, Verso e Assinatura. O quarto slide usa sempre o QR fixo e sem validade do simulador.</p>
               ${documentUploadSteps.map((step, index) => `
                 <label class="upload-step">
                   <span>${index + 1}. ${step.label}${index < requiredDocumentUploadSteps.length ? "" : " (opcional)"}</span>
                   <input name="${step.key}" type="file" accept="${acceptedPhotoTypes}" ${index < requiredDocumentUploadSteps.length ? "required" : ""} />
-                  <small class="crop-status ${index < requiredDocumentUploadSteps.length ? "" : "ready"}" data-crop-status="${step.key}" aria-live="polite">${index < requiredDocumentUploadSteps.length ? `Recorte pendente - ${documentCrop.width}x${documentCrop.height}` : "QR padrao sera usado se nenhum arquivo for enviado."}</small>
+                  <small class="crop-status" data-crop-status="${step.key}" aria-live="polite">Recorte pendente - ${documentCrop.width}x${documentCrop.height}</small>
                 </label>
               `).join("")}
             </div>
@@ -482,7 +588,8 @@ async function renderDashboardPage() {
               <div class="crop-tool-tabs" aria-label="Ferramentas de edicao">
                 <button class="active" type="button" data-crop-mode="move">Mover</button>
                 <button type="button" data-crop-mode="erase">Borracha</button>
-                <button type="button" data-crop-mode="pencil">Lapis</button>
+                <button type="button" data-crop-mode="pencil">Lapis fino</button>
+                <button type="button" data-crop-mode="pixel">Pixel</button>
                 <button type="button" data-crop-mode="eyedropper">Conta-gotas</button>
                 <button type="button" data-crop-mode="sticker7">Numero 7</button>
                 <button type="button" data-crop-mode="sticker0">Numero 0</button>
@@ -493,8 +600,9 @@ async function renderDashboardPage() {
                 <input id="eraserSize" type="range" min="1" max="120" step="1" value="18" />
               </label>
               <label>
-                <span>Tamanho do lapis</span>
-                <input id="pencilSize" type="range" min="1" max="120" step="1" value="18" />
+                <span class="pencil-size-heading">Espessura do lapis <output id="pencilSizeValue">${defaultPencilSize} px</output></span>
+                <input id="pencilSize" type="range" min="0.5" max="120" step="0.5" value="${defaultPencilSize}" />
+                <small>Use Lapis fino para tracos suaves. Pixel desenha pontos exatos de 1 px.</small>
               </label>
               <div class="pencil-color-panel">
                 <span class="pencil-color-title">Cor extraida da foto</span>
@@ -643,7 +751,7 @@ function getIdentityDocumentPages(identity) {
       identity.photoSlides[0],
       identity.photoSlides[1],
       identity.photoSlides[2],
-      identity.photoSlides[3] || govScreenAssets.qr
+      govScreenAssets.qr
     ];
   }
 
@@ -673,10 +781,8 @@ function openPhotoEditModal(identityId) {
     if (editButton) editButton.disabled = !(state.photoEditStates[step.key] && state.photoEditStates[step.key].source);
     if (status) {
       status.textContent = state.croppedPhotos[step.key]
-        ? `${step.key === "qr" ? "QR editado mantido" : "Foto atual mantida"} - ${documentCrop.width}x${documentCrop.height}`
-        : step.key === "qr"
-          ? "QR padrao mantido se nenhum arquivo for enviado."
-          : `Recorte pendente - ${documentCrop.width}x${documentCrop.height}`;
+        ? `Foto atual mantida - ${documentCrop.width}x${documentCrop.height}`
+        : `Recorte pendente - ${documentCrop.width}x${documentCrop.height}`;
       status.classList.toggle("ready", Boolean(state.croppedPhotos[step.key]));
     }
   });
@@ -1064,7 +1170,7 @@ function createLegacyPhotoEditState(source) {
     offsetX: 0,
     offsetY: 0,
     eraserSize: 18,
-    pencilSize: 18,
+    pencilSize: defaultPencilSize,
     pencilColor: cropPencilColor,
     stickers: [],
     brushHistory: []
@@ -1151,7 +1257,7 @@ async function openCropper(stepKey, file = null, statusElement = null, savedEdit
     sampleCanvas,
     mode: "move",
     eraserSize: Number(restoredEdit.eraserSize) || 18,
-    pencilSize: Number(restoredEdit.pencilSize) || 18,
+    pencilSize: Number(restoredEdit.pencilSize) || defaultPencilSize,
     pencilColor: normalizePencilColor(restoredEdit.pencilColor) || cropPencilColor,
     stickers: restoredStickers,
     activeStickerIndex: restoredStickers.length - 1,
@@ -1185,6 +1291,7 @@ async function openCropper(stepKey, file = null, statusElement = null, savedEdit
   const pencilInput = document.querySelector("#pencilSize");
   if (eraserInput) eraserInput.value = String(documentCrop.current.eraserSize);
   if (pencilInput) pencilInput.value = String(documentCrop.current.pencilSize);
+  syncPencilSizeOutput();
   syncPencilColorControls();
   syncStickerAlignmentControls();
   if (modal) {
@@ -1506,10 +1613,10 @@ function bindCropperEvents() {
       return;
     }
 
-    if (crop.stepKey === "front" && crop.mode === "pencil") {
+    if (crop.stepKey === "front" && (crop.mode === "pencil" || crop.mode === "pixel")) {
       crop.pencilStart = true;
       crop.brushLastPoint = null;
-      startBrushStroke("pencil");
+      startBrushStroke("pencil", crop.mode === "pixel" ? "pixel" : "smooth");
       applyBrushFromPointerEvent(event, "pencil");
       return;
     }
@@ -1637,6 +1744,7 @@ function bindCropperEvents() {
   document.querySelector("#pencilSize")?.addEventListener("input", (event) => {
     if (!documentCrop.current) return;
     documentCrop.current.pencilSize = Number(event.target.value);
+    syncPencilSizeOutput();
   });
   document.querySelector("#selectPencilPixelColor")?.addEventListener("click", () => {
     setCropMode("eyedropper");
@@ -1679,7 +1787,7 @@ function setCropMode(mode) {
   if (canvas) {
     canvas.style.cursor = crop && crop.mode === "eyedropper"
       ? "crosshair"
-      : crop && (crop.mode === "pencil" || crop.mode === "erase")
+      : crop && (crop.mode === "pencil" || crop.mode === "pixel" || crop.mode === "erase")
         ? "crosshair"
         : "grab";
   }
@@ -1708,6 +1816,14 @@ function syncPencilColorControls(statusText = "") {
   if (hex) hex.textContent = color.toUpperCase();
   if (swatch) swatch.style.setProperty("--current-pencil-color", color);
   if (status) status.textContent = statusText || `Cor atual: ${color.toUpperCase()}`;
+}
+
+function syncPencilSizeOutput() {
+  const crop = documentCrop.current;
+  const output = document.querySelector("#pencilSizeValue");
+  if (!crop || !output) return;
+  const size = Number(crop.pencilSize) || defaultPencilSize;
+  output.textContent = `${size.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} px`;
 }
 
 function setPencilColor(value, statusText = "") {
@@ -1765,7 +1881,8 @@ function getImagePointFromCanvasPoint(point) {
 
   const { scale, offsetScale } = getCropTransform(crop, canvas.width, canvas.height);
   const previewScale = canvas.width / documentCrop.width;
-  const pencilPixelSize = Math.max(1, Math.round((crop.pencilSize * previewScale) / scale));
+  const pencilLineSize = Math.max(0.5, (crop.pencilSize * previewScale) / scale);
+  const pencilPixelSize = Math.max(1, Math.round(pencilLineSize));
   const centerX = canvas.width / 2 + crop.offsetX * offsetScale;
   const centerY = canvas.height / 2 + crop.offsetY * offsetScale;
   const dx = point.x - centerX;
@@ -1778,7 +1895,7 @@ function getImagePointFromCanvasPoint(point) {
     x: rotatedX / scale + crop.image.naturalWidth / 2,
     y: rotatedY / scale + crop.image.naturalHeight / 2,
     eraseRadius: Math.max(0.5, (crop.eraserSize * previewScale) / 2 / scale),
-    pencilRadius: pencilPixelSize / 2,
+    pencilRadius: pencilLineSize / 2,
     pencilPixelSize
   };
 }
@@ -1789,13 +1906,14 @@ function getBrushPointerEvents(event) {
     : [event];
 }
 
-function startBrushStroke(tool) {
+function startBrushStroke(tool, style = "legacy") {
   const crop = documentCrop.current;
   if (!crop) return;
   if (crop.brushHistory.length >= 500) crop.brushHistory.shift();
   crop.activeBrushStroke = {
     tool,
     color: tool === "pencil" ? crop.pencilColor : null,
+    style: tool === "pencil" ? style : null,
     points: []
   };
   crop.brushHistory.push(crop.activeBrushStroke);
@@ -1823,7 +1941,7 @@ function rebuildBrushCanvases(crop) {
   for (const stroke of crop.brushHistory || []) {
     crop.brushLastPoint = null;
     for (const point of stroke.points || []) {
-      drawBrushAtImagePoint(point, stroke.tool, false, stroke.color);
+      drawBrushAtImagePoint(point, stroke.tool, false, stroke.color, stroke.style || "legacy");
     }
   }
   crop.brushLastPoint = null;
@@ -1867,7 +1985,7 @@ function drawOnePixelLine(context, previous, point) {
   }
 }
 
-function drawBrushAtImagePoint(point, tool, recordPoint = true, strokeColor = null) {
+function drawBrushAtImagePoint(point, tool, recordPoint = true, strokeColor = null, strokeStyle = null) {
   const crop = documentCrop.current;
   if (!crop) return;
 
@@ -1877,6 +1995,9 @@ function drawBrushAtImagePoint(point, tool, recordPoint = true, strokeColor = nu
   const radius = tool === "erase" ? point.eraseRadius : point.pencilRadius;
   const context = targetCanvas.getContext("2d");
   const previous = crop.brushLastPoint;
+  const pencilStyle = tool === "pencil"
+    ? strokeStyle || crop.activeBrushStroke?.style || "legacy"
+    : null;
 
   context.save();
   const pencilColor = normalizePencilColor(strokeColor || crop.activeBrushStroke?.color || crop.pencilColor) || cropPencilColor;
@@ -1886,7 +2007,10 @@ function drawBrushAtImagePoint(point, tool, recordPoint = true, strokeColor = nu
   context.lineJoin = "round";
   context.lineWidth = radius * 2;
 
-  const isOnePixelPencil = tool === "pencil" && (point.pencilPixelSize === 1 || radius <= 0.5);
+  const isOnePixelPencil = tool === "pencil" && (
+    pencilStyle === "pixel"
+    || (pencilStyle === "legacy" && (point.pencilPixelSize === 1 || radius <= 0.5))
+  );
   if (isOnePixelPencil) {
     drawOnePixelLine(context, previous && previous.tool === tool ? previous : null, point);
   } else if (previous && previous.tool === tool) {
@@ -2176,7 +2300,7 @@ async function renderStoredPhotoEdit(stepKey, edit) {
     paintCanvas: isFront ? makeLayer() : null,
     mode: "move",
     eraserSize: Number(edit.eraserSize) || 18,
-    pencilSize: Number(edit.pencilSize) || 18,
+    pencilSize: Number(edit.pencilSize) || defaultPencilSize,
     pencilColor: normalizePencilColor(edit.pencilColor) || cropPencilColor,
     stickers: storedStickers,
     activeStickerIndex: storedStickers.length - 1,
@@ -2235,10 +2359,6 @@ async function readOrderedPhotoSlides(form) {
     slides.push(state.croppedPhotos[step.key]);
   }
 
-  if (state.croppedPhotos.qr) {
-    slides.push(state.croppedPhotos.qr);
-  }
-
   return slides;
 }
 
@@ -2246,6 +2366,10 @@ async function renderIdentityPage() {
   const hasUser = await ensureUser();
   if (!hasUser) {
     goTo("/auth", true);
+    return;
+  }
+  if (!state.user.access || !state.user.access.active) {
+    goTo("/assinatura", true);
     return;
   }
 
@@ -2266,7 +2390,7 @@ async function renderRoute() {
   if (path === "/auth") {
     const hasUser = await ensureUser();
     if (hasUser) {
-      goTo("/dashboard", true);
+      goTo(state.user.access && state.user.access.active ? "/dashboard" : "/assinatura", true);
       return;
     }
     renderAuthPage();
@@ -2275,6 +2399,11 @@ async function renderRoute() {
 
   if (path === "/dashboard") {
     renderDashboardPage();
+    return;
+  }
+
+  if (path === "/assinatura") {
+    renderSubscriptionPage();
     return;
   }
 
@@ -2287,6 +2416,29 @@ async function renderRoute() {
 }
 
 function bindEvents() {
+  document.querySelectorAll("[data-plan-code]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const buttons = [...document.querySelectorAll("[data-plan-code]")];
+      buttons.forEach((item) => { item.disabled = true; });
+      button.textContent = "Abrindo Checkout Asaas...";
+      try {
+        const payload = await api("/api/billing/checkout", {
+          method: "POST",
+          body: JSON.stringify({ planCode: button.dataset.planCode })
+        });
+        window.location.assign(payload.checkoutUrl);
+      } catch (error) {
+        const message = document.querySelector(".billing-message") || document.createElement("p");
+        message.className = "billing-message error";
+        message.setAttribute("role", "alert");
+        message.textContent = error.message;
+        if (!message.parentNode) document.querySelector(".subscription-header")?.insertAdjacentElement("afterend", message);
+        buttons.forEach((item) => { item.disabled = false; });
+        button.textContent = button.dataset.planCode === "quarterly" ? "Escolher trimestral" : "Pagar com Pix";
+      }
+    });
+  });
+
   document.querySelectorAll("[data-auth-mode]").forEach((button) => {
     button.addEventListener("click", () => {
       state.authMode = button.dataset.authMode;
@@ -2313,7 +2465,7 @@ function bindEvents() {
         });
         state.user = payload.user;
         state.csrfToken = payload.csrfToken || "";
-        goTo("/dashboard");
+        goTo(payload.user.access && payload.user.access.active ? "/dashboard" : "/assinatura");
       } catch (error) {
         renderAuthPage(error.message);
       }
@@ -2330,10 +2482,8 @@ function bindEvents() {
         delete state.photoEditStates[step.key];
         const status = document.querySelector(`[data-crop-status="${step.key}"]`);
         if (status) {
-          status.textContent = step.key === "qr"
-            ? "QR padrao sera usado se nenhum arquivo for enviado."
-            : `Recorte pendente - ${documentCrop.width}x${documentCrop.height}`;
-          status.classList.toggle("ready", step.key === "qr");
+          status.textContent = `Recorte pendente - ${documentCrop.width}x${documentCrop.height}`;
+          status.classList.remove("ready");
         }
 
         try {
@@ -2426,10 +2576,6 @@ function bindEvents() {
           }
           return state.croppedPhotos[step.key];
         });
-        if (state.croppedPhotos.qr) {
-          photoSlides.push(state.croppedPhotos.qr);
-        }
-
         await api(`/api/identities/${encodeURIComponent(state.editingPhotosFor)}`, {
           method: "PATCH",
           body: JSON.stringify({ photoSlides, photoEditStates: state.photoEditStates })
@@ -2561,6 +2707,21 @@ function bindEvents() {
       });
       renderDashboardPage();
     });
+  });
+
+  document.querySelectorAll("[data-toggle-access]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const currentlyExempt = button.dataset.accessExempt === "true";
+      await api(`/api/users/${encodeURIComponent(button.dataset.toggleAccess)}/access`, {
+        method: "PATCH",
+        body: JSON.stringify({ exempt: !currentlyExempt })
+      });
+      renderDashboardPage();
+    });
+  });
+
+  document.querySelector("#previewPlansButton")?.addEventListener("click", () => {
+    goTo("/assinatura?preview=1");
   });
 
   const logoutButton = document.querySelector("#logoutButton");
