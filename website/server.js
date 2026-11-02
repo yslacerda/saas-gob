@@ -128,7 +128,7 @@ const ready = (async () => {
   `);
   await run("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user'");
   await run("ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT");
-  // Coluna legada mantida por compatibilidade; o acesso agora depende de pagamento confirmado.
+  // Contas existentes podem receber acesso vitalício; novos cadastros usam o default false.
   await run("ALTER TABLE users ADD COLUMN IF NOT EXISTS access_exempt BOOLEAN NOT NULL DEFAULT TRUE");
   await run("ALTER TABLE users ALTER COLUMN access_exempt SET DEFAULT FALSE");
   await run("ALTER TABLE users ADD COLUMN IF NOT EXISTS access_until TIMESTAMPTZ");
@@ -365,7 +365,8 @@ function normalizeUsername(value) {
 
 function publicUser(row) {
   const accessUntil = row.access_until ? new Date(row.access_until) : null;
-  const hasAccess = (row.role || "user") === "admin" || (accessUntil && accessUntil.getTime() > Date.now());
+  const accessExempt = Boolean(row.access_exempt);
+  const hasAccess = (row.role || "user") === "admin" || accessExempt || (accessUntil && accessUntil.getTime() > Date.now());
   return {
     id: row.id,
     name: row.name,
@@ -373,7 +374,7 @@ function publicUser(row) {
     role: row.role || "user",
     access: {
       active: Boolean(hasAccess),
-      exempt: false,
+      exempt: accessExempt,
       until: accessUntil ? accessUntil.toISOString() : null
     }
   };
@@ -471,7 +472,7 @@ function requireAdmin(user, response) {
 
 function hasProductAccess(user) {
   if (!user) return false;
-  if (isAdmin(user)) return true;
+  if (isAdmin(user) || user.access_exempt) return true;
   return Boolean(user.access_until && new Date(user.access_until).getTime() > Date.now());
 }
 
@@ -773,8 +774,8 @@ async function handleApi(request, response, url) {
     const user = await requireUser(request, response);
     if (!user) return;
     if (!requireCsrf(request, response, user)) return;
-    if (isAdmin(user)) {
-      sendJson(response, 400, { error: "A conta administrativa não precisa comprar um plano." });
+    if (isAdmin(user) || user.access_exempt) {
+      sendJson(response, 400, { error: "Esta conta possui acesso vitalício e não precisa comprar um plano." });
       return;
     }
 
@@ -853,7 +854,7 @@ async function handleApi(request, response, url) {
     const user = await requireUser(request, response);
     if (!user) return;
     if (!requireAdmin(user, response)) return;
-    const rows = await all("SELECT id, name, username, role, access_until FROM users ORDER BY created_at ASC");
+    const rows = await all("SELECT id, name, username, role, access_exempt, access_until FROM users ORDER BY created_at ASC");
     sendJson(response, 200, { users: rows.map(publicUser) });
     return;
   }

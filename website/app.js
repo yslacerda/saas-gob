@@ -371,7 +371,9 @@ function adminUserList() {
             const isUserAdmin = user.role === "admin";
             const accessLabel = isUserAdmin
               ? "acesso administrativo"
-              : user.access && user.access.active
+              : user.access && user.access.exempt
+                ? "acesso vitalício"
+                : user.access && user.access.active
                 ? `ativo até ${new Date(user.access.until).toLocaleDateString("pt-BR")}`
                 : "assinatura necessária";
             return `
