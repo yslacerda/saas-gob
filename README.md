@@ -38,7 +38,7 @@ Novas contas comuns escolhem uma compra avulsa de acesso:
 
 O pagamento usa o Checkout hospedado da Asaas e aceita somente Pix. Contas que ja existiam quando a migracao foi executada pela primeira vez recebem acesso permanente; administradores tambem nao passam pelo paywall.
 
-Configure `APP_BASE_URL`, `ASAAS_API_KEY` e `ASAAS_WEBHOOK_TOKEN`. Em Sandbox, mantenha `ASAAS_API_BASE_URL=https://api-sandbox.asaas.com/v3`. Na Asaas, crie um webhook apontando para:
+Configure `APP_BASE_URL`, `ASAAS_API_KEY` e `ASAAS_WEBHOOK_TOKEN`. Em Sandbox, mantenha `ASAAS_API_BASE_URL=https://api-sandbox.asaas.com/v3`; o checkout usara automaticamente `https://sandbox.asaas.com/checkoutSession/show`. Na Asaas, crie um webhook apontando para:
 
 ```text
 https://SEU-DOMINIO/api/payments/asaas/webhook

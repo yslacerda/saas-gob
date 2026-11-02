@@ -14,7 +14,10 @@ const allowBootstrapAdmin = process.env.ALLOW_BOOTSTRAP_ADMIN === "true";
 const secureCookies = process.env.NODE_ENV === "production" || process.env.SECURE_COOKIES === "true";
 const asaasApiKey = process.env.ASAAS_API_KEY || "";
 const asaasApiBaseUrl = String(process.env.ASAAS_API_BASE_URL || "https://api-sandbox.asaas.com/v3").replace(/\/+$/, "");
-const asaasCheckoutBaseUrl = String(process.env.ASAAS_CHECKOUT_BASE_URL || "https://asaas.com/checkoutSession/show");
+const defaultAsaasCheckoutBaseUrl = asaasApiBaseUrl.includes("api-sandbox.asaas.com")
+  ? "https://sandbox.asaas.com/checkoutSession/show"
+  : "https://asaas.com/checkoutSession/show";
+const asaasCheckoutBaseUrl = String(process.env.ASAAS_CHECKOUT_BASE_URL || defaultAsaasCheckoutBaseUrl);
 const asaasWebhookToken = process.env.ASAAS_WEBHOOK_TOKEN || "";
 const appBaseUrl = String(process.env.APP_BASE_URL || "").replace(/\/+$/, "");
 const paymentConfigurationReady = Boolean(asaasApiKey && asaasWebhookToken.length >= 32 && /^https?:\/\//i.test(appBaseUrl));
