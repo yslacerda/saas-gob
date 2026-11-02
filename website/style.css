@@ -66,219 +66,6 @@ button:disabled {
 #app {
   min-height: 100vh;
   min-height: 100dvh;
-  padding-bottom: 58px;
-}
-
-.simulator-notice {
-  position: fixed;
-  z-index: 10000;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  min-height: 48px;
-  padding: 8px 18px;
-  border-top: 2px solid #4ba3d3;
-  background: linear-gradient(90deg, #102a43 0%, #174a70 50%, #102a43 100%);
-  color: #edf7ff;
-  text-align: center;
-  font-size: 12px;
-  box-shadow: 0 -6px 18px rgba(16, 42, 67, 0.24);
-}
-
-.simulator-notice strong {
-  color: #9cddff;
-  letter-spacing: 0.04em;
-}
-
-.subscription-page {
-  min-height: calc(100vh - 58px);
-  padding: 42px clamp(18px, 5vw, 72px) 56px;
-  background:
-    radial-gradient(circle at 15% 0%, rgba(19, 81, 180, 0.14), transparent 32%),
-    linear-gradient(180deg, #f8fbff 0%, #eef3f8 100%);
-}
-
-.subscription-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 28px;
-  width: min(1040px, 100%);
-  margin: 0 auto 30px;
-}
-
-.subscription-brand {
-  color: var(--gov-blue);
-  font-weight: 900;
-  letter-spacing: 0.02em;
-}
-
-.subscription-header h1 {
-  max-width: 680px;
-  margin: 8px 0 10px;
-  font-size: clamp(30px, 5vw, 52px);
-  line-height: 1.04;
-}
-
-.subscription-header p,
-.payment-footnote {
-  color: #59636f;
-}
-
-.pricing-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 22px;
-  width: min(880px, 100%);
-  margin: 0 auto;
-}
-
-.pricing-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  min-height: 430px;
-  padding: 30px;
-  border: 1px solid #dce4ee;
-  border-radius: 24px;
-  background: #fff;
-  box-shadow: 0 18px 50px rgba(30, 64, 108, 0.1);
-}
-
-.pricing-card.featured {
-  border: 2px solid var(--gov-blue);
-  transform: translateY(-8px);
-  box-shadow: 0 24px 60px rgba(19, 81, 180, 0.18);
-}
-
-.plan-kicker,
-.best-value {
-  color: var(--gov-blue);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.best-value {
-  position: absolute;
-  top: 18px;
-  right: 18px;
-  padding: 7px 10px;
-  border-radius: 999px;
-  background: #e8f0ff;
-}
-
-.pricing-card h2 {
-  margin: 10px 0 18px;
-  font-size: 30px;
-}
-
-.plan-price {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 18px;
-}
-
-.plan-price strong {
-  color: #102a4f;
-  font-size: 40px;
-  line-height: 1;
-}
-
-.plan-price span,
-.price-comparison s {
-  color: #6b7280;
-  font-size: 13px;
-}
-
-.price-comparison {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  margin: -8px 0 14px;
-}
-
-.price-comparison strong {
-  color: #08783e;
-  font-size: 13px;
-}
-
-.pricing-card ul {
-  display: grid;
-  gap: 12px;
-  margin: 4px 0 28px;
-  padding-left: 20px;
-  color: #3e4854;
-}
-
-.plan-button {
-  width: 100%;
-  margin-top: auto;
-}
-
-.billing-message,
-.payment-footnote {
-  width: min(880px, 100%);
-  margin: 0 auto 22px;
-  padding: 13px 16px;
-  border: 1px solid #bdd2f4;
-  border-radius: 12px;
-  background: #eaf2ff;
-  color: #173c73;
-  text-align: center;
-  font-size: 14px;
-}
-
-.billing-message.error {
-  border-color: #f0b8b5;
-  background: #fff0ef;
-  color: #8c211b;
-}
-
-.payment-footnote {
-  margin-top: 24px;
-  border: 0;
-  background: transparent;
-}
-
-@media (max-width: 720px) {
-  #app {
-    padding-bottom: 78px;
-  }
-
-  .simulator-notice {
-    flex-direction: column;
-    gap: 2px;
-    min-height: 68px;
-    padding: 7px 12px;
-  }
-
-  .subscription-page {
-    padding: 26px 16px 40px;
-  }
-
-  .subscription-header {
-    flex-direction: column;
-  }
-
-  .subscription-header .header-actions {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .pricing-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .pricing-card.featured {
-    transform: none;
-  }
 }
 
 .gov-logo {
@@ -1008,15 +795,7 @@ select:focus {
   font-size: 12px;
 }
 
-.user-card-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.user-card-actions .secondary-btn,
-.user-card-actions .danger-btn {
+.user-card .danger-btn {
   width: auto;
   min-height: 38px;
   padding: 0 13px;
@@ -1352,21 +1131,6 @@ select:focus {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.35;
-}
-
-.pencil-size-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-#pencilSizeValue {
-  min-width: 52px;
-  color: var(--gov-blue-dark);
-  font-size: 12px;
-  font-weight: 800;
-  text-align: right;
 }
 
 .crop-tool-tabs {
@@ -2325,13 +2089,7 @@ select:focus {
     grid-template-columns: 1fr;
   }
 
-  .user-card-actions {
-    display: grid;
-    grid-template-columns: 1fr;
-  }
-
-  .user-card-actions .secondary-btn,
-  .user-card-actions .danger-btn {
+  .user-card .danger-btn {
     width: 100%;
     min-height: 44px;
   }

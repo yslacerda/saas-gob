@@ -37,10 +37,11 @@ const documentPages = [
 const documentPhotoSteps = [
   { key: "front", label: "Frente" },
   { key: "back", label: "Verso" },
-  { key: "signature", label: "Assinatura" }
+  { key: "signature", label: "Assinatura" },
+  { key: "qr", label: "QR padrao" }
 ];
 
-const requiredDocumentUploadSteps = documentPhotoSteps;
+const requiredDocumentUploadSteps = documentPhotoSteps.slice(0, 3);
 const documentUploadSteps = documentPhotoSteps;
 
 const acceptedPhotoTypes = "image/jpeg,image/png,image/webp,image/heic,image/heif,image/gif,image/bmp";
@@ -54,7 +55,6 @@ const documentCrop = {
 const cropEraseBackground = "#f7f5e9";
 const cropPencilColor = "#e7e7c3";
 const cropEraseFillColor = cropPencilColor;
-const defaultPencilSize = 1.5;
 const maxCropZoom = 30;
 
 const referenceView = {
@@ -123,11 +123,7 @@ async function api(path, options = {}) {
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    if (response.status === 402 && payload.code === "SUBSCRIPTION_REQUIRED") {
-      if (state.user && state.user.access) state.user.access.active = false;
-      if (window.location.pathname !== "/assinaturas") goTo("/assinaturas", true);
-    }
-    throw new Error(payload.error || "Falha na requisição");
+    throw new Error(payload.error || "Falha na requisicao");
   }
   return payload;
 }
@@ -175,11 +171,7 @@ function isAdmin() {
 }
 
 function renderShell(content) {
-  app.innerHTML = `${content}
-    <footer class="simulator-notice">
-      <strong>SIMULADOR — SEM VALIDADE DOCUMENTAL</strong>
-      <span>Projeto independente, sem vínculo com gov.br, Governo Federal ou qualquer órgão público.</span>
-    </footer>`;
+  app.innerHTML = content;
   bindEvents();
 }
 
@@ -200,8 +192,8 @@ function renderAuthPage(message = "") {
 
         <div class="auth-copy">
           <span class="eyebrow">Acesso seguro</span>
-          <h1>${isLogin ? "Entre com seu usuário." : "Crie seu usuário."}</h1>
-          <p>Use seu usuário para cadastrar, consultar e remover identidades no painel.</p>
+          <h1>${isLogin ? "Entre com usuario." : "Crie seu usuario."}</h1>
+          <p>Use seu usuario para cadastrar, consultar e remover identidades no painel.</p>
         </div>
 
         <div class="auth-tabs" role="tablist">
@@ -212,18 +204,18 @@ function renderAuthPage(message = "") {
         <form class="auth-form" id="authForm">
           ${!isLogin ? `
             <label>
-              <span>Usuário</span>
+              <span>Usuario</span>
               <input name="username" type="text" autocomplete="username" placeholder="seu.usuario" required />
             </label>
           ` : `
             <label>
-              <span>Usuário</span>
+              <span>Usuario</span>
               <input name="login" type="text" autocomplete="username" placeholder="seu.usuario" required />
             </label>
           `}
           <label>
             <span>Senha</span>
-            <input name="password" type="password" autocomplete="${isLogin ? "current-password" : "new-password"}" placeholder="Mínimo de 6 caracteres" required />
+            <input name="password" type="password" autocomplete="${isLogin ? "current-password" : "new-password"}" placeholder="Minimo de 6 caracteres" required />
           </label>
           ${message ? `<p class="form-message">${escapeHtml(message)}</p>` : ""}
           <button class="primary-btn" type="submit">${isLogin ? "Entrar" : "Cadastrar"}</button>
@@ -243,101 +235,19 @@ function renderAuthPage(message = "") {
   `);
 }
 
-async function renderSubscriptionPage() {
-  const hasUser = await ensureUser();
-  if (!hasUser) {
-    goTo("/auth", true);
-    return;
-  }
-
-  const billing = await api("/api/billing/status");
-  state.user = billing.user;
-  const isPreview = new URLSearchParams(window.location.search).get("preview") === "1";
-  if (state.user.access && state.user.access.active && !isPreview) {
-    goTo("/dashboard", true);
-    return;
-  }
-
-  const paymentResult = new URLSearchParams(window.location.search).get("payment");
-  const resultMessages = {
-    success: "Pix concluído. Estamos aguardando a confirmação segura da Asaas para liberar seu acesso.",
-    canceled: "Pagamento cancelado. Você pode escolher um plano e tentar novamente.",
-    expired: "O checkout expirou. Gere um novo Pix para continuar."
-  };
-  const purchaseStatus = billing.latestPurchase && billing.latestPurchase.status;
-  const paymentMessage = resultMessages[paymentResult]
-    || (purchaseStatus === "pending" ? "Existe um checkout aguardando pagamento ou confirmação." : "");
-  const canPurchase = billing.paymentConfigured && !isAdmin();
-
-  renderShell(`
-    <section class="subscription-page">
-      <header class="subscription-header">
-        <div>
-          <span class="subscription-brand">Gov.Fake</span>
-          <h1>Escolha seu período de acesso</h1>
-          <p>Pagamento único por Pix. Sem cartão, renovação automática ou cobrança surpresa.</p>
-        </div>
-        <div class="header-actions">
-          <span>@${escapeHtml(state.user.username || state.user.name)}</span>
-          <button class="ghost-btn" id="logoutButton" type="button">Sair</button>
-        </div>
-      </header>
-
-      ${isPreview ? `<p class="billing-message" role="status">Prévia administrativa da tela de planos. A conta administrativa continua com acesso.</p>` : ""}
-      ${paymentMessage ? `<p class="billing-message" role="status">${escapeHtml(paymentMessage)}</p>` : ""}
-      ${billing.paymentConfigured ? "" : `<p class="billing-message error" role="alert">O pagamento ainda não foi configurado pelo administrador.</p>`}
-
-      <main class="pricing-grid">
-        <article class="pricing-card">
-          <span class="plan-kicker">30 dias</span>
-          <h2>Mensal</h2>
-          <div class="plan-price"><strong>R$ 39,99</strong><span>pagamento único</span></div>
-          <ul>
-            <li>Acesso completo por 30 dias</li>
-            <li>Pagamento seguro via Pix</li>
-            <li>Renovação manual</li>
-          </ul>
-          <button class="primary-btn plan-button" type="button" data-plan-code="monthly" ${canPurchase ? "" : "disabled"}>Pagar com Pix</button>
-        </article>
-
-        <article class="pricing-card featured">
-          <span class="best-value">Melhor economia</span>
-          <span class="plan-kicker">90 dias</span>
-          <h2>Trimestral</h2>
-          <div class="price-comparison"><s>3 mensais: R$ 119,97</s><strong>Economize R$ 59,98</strong></div>
-          <div class="plan-price"><strong>R$ 59,99</strong><span>pagamento único</span></div>
-          <ul>
-            <li>Acesso completo por 90 dias</li>
-            <li>50% de economia frente a 3 mensalidades</li>
-            <li>Pagamento seguro via Pix</li>
-          </ul>
-          <button class="primary-btn plan-button" type="button" data-plan-code="quarterly" ${canPurchase ? "" : "disabled"}>Escolher trimestral</button>
-        </article>
-      </main>
-
-      <p class="payment-footnote">O pagamento é processado no Checkout Asaas. O acesso só é liberado após confirmação por webhook.</p>
-    </section>
-  `);
-
-  if (paymentResult === "success" && purchaseStatus === "pending") {
-    window.setTimeout(() => {
-      if (window.location.pathname === "/assinaturas") renderSubscriptionPage();
-    }, 2500);
-  }
-}
-
 function identityCard(identity) {
   const hasRequiredPhotos = identity.photoSlides && identity.photoSlides.length >= requiredDocumentUploadSteps.length;
+  const hasCustomQr = identity.photoSlides && identity.photoSlides.length >= documentPhotoSteps.length;
 
   return `
     <article class="identity-card">
       <div>
         <span class="identity-chip">ID</span>
         <h3>${escapeHtml(identity.title)}</h3>
-        <strong>${escapeHtml(identity.displayName || "Nome não informado")}</strong>
-        <small>CPF: ${escapeHtml(identity.cpf || "Não informado")}</small>
-        <small>${hasRequiredPhotos ? "3 fotos + QR fixo sem validade" : "Sem fotos anexadas"}</small>
-        ${isAdmin() ? `<em>@${escapeHtml(identity.ownerUsername || identity.ownerName || "usuário")}</em>` : ""}
+        <strong>${escapeHtml(identity.displayName || "Nome nao informado")}</strong>
+        <small>CPF: ${escapeHtml(identity.cpf || "Nao informado")}</small>
+        <small>${hasRequiredPhotos ? `3 fotos + ${hasCustomQr ? "QR editado" : "QR padrao"}` : "Sem fotos anexadas"}</small>
+        ${isAdmin() ? `<em>@${escapeHtml(identity.ownerUsername || identity.ownerName || "usuario")}</em>` : ""}
       </div>
       <div class="identity-actions">
         <button class="secondary-btn" type="button" data-open-identity="${escapeHtml(identity.id)}">Acessar</button>
@@ -358,8 +268,8 @@ function adminUserList() {
     <section class="admin-users">
       <div class="panel-heading compact">
         <div>
-          <span class="eyebrow">Usuários</span>
-          <h2>Gerenciar usuários</h2>
+          <span class="eyebrow">Usuarios</span>
+          <h2>Gerenciar usuarios</h2>
         </div>
         <strong>${state.users.length}</strong>
       </div>
@@ -368,27 +278,17 @@ function adminUserList() {
           ? state.users.map((user) => {
             const identityCount = state.identities.filter((identity) => identity.userId === user.id).length;
             const isCurrentUser = user.id === state.user.id;
-            const isUserAdmin = user.role === "admin";
-            const accessLabel = isUserAdmin
-              ? "acesso administrativo"
-              : user.access && user.access.exempt
-                ? "acesso vitalício"
-                : user.access && user.access.active
-                ? `ativo até ${new Date(user.access.until).toLocaleDateString("pt-BR")}`
-                : "assinatura necessária";
             return `
               <article class="user-card">
                 <div>
                   <strong>@${escapeHtml(user.username || user.name)}</strong>
-                  <small>${escapeHtml(user.role || "user")} - ${identityCount} identidade${identityCount === 1 ? "" : "s"} - ${escapeHtml(accessLabel)}</small>
+                  <small>${escapeHtml(user.role || "user")} - ${identityCount} identidade${identityCount === 1 ? "" : "s"}</small>
                 </div>
-                <div class="user-card-actions">
-                  <button class="danger-btn" type="button" data-remove-user="${escapeHtml(user.id)}" ${isCurrentUser ? "disabled" : ""}>Remover</button>
-                </div>
+                <button class="danger-btn" type="button" data-remove-user="${escapeHtml(user.id)}" ${isCurrentUser ? "disabled" : ""}>Remover</button>
               </article>
             `;
           }).join("")
-          : `<div class="empty-state compact">Nenhum usuário cadastrado.</div>`}
+          : `<div class="empty-state compact">Nenhum usuario cadastrado.</div>`}
       </div>
     </section>
   `;
@@ -398,10 +298,6 @@ async function renderDashboardPage() {
   const hasUser = await ensureUser();
   if (!hasUser) {
     goTo("/auth", true);
-    return;
-  }
-  if (!state.user.access || !state.user.access.active) {
-    goTo("/assinaturas", true);
     return;
   }
 
@@ -417,11 +313,10 @@ async function renderDashboardPage() {
         <div>
           ${govLogo()}
           <h1>Dashboard</h1>
-          ${isAdmin() ? "" : "<p>Gerencie as identidades vinculadas ao seu usuário.</p>"}
+          ${isAdmin() ? "" : "<p>Gerencie as identidades vinculadas ao seu usuario.</p>"}
         </div>
         <div class="header-actions">
           <span>@${escapeHtml(state.user.username || state.user.name)}${isAdmin() ? " - admin" : ""}</span>
-          ${isAdmin() ? `<button class="ghost-btn" id="previewPlansButton" type="button">Ver planos</button>` : ""}
           <button class="ghost-btn" id="logoutButton" type="button">Sair</button>
         </div>
       </header>
@@ -450,7 +345,7 @@ async function renderDashboardPage() {
           <form id="identityForm" class="identity-form">
             ${isAdmin() ? `
               <label>
-                <span>Usuário proprietário</span>
+                <span>Usuario dono</span>
                 <select name="userId" required>
                   ${state.users.map((user) => `
                     <option value="${escapeHtml(user.id)}">@${escapeHtml(user.username || user.name)}</option>
@@ -459,7 +354,7 @@ async function renderDashboardPage() {
               </label>
             ` : ""}
             <label>
-              <span>Título</span>
+              <span>Titulo</span>
               <input name="title" type="text" placeholder="Identidade 2" />
             </label>
             <div class="wallet-data-card">
@@ -474,12 +369,12 @@ async function renderDashboardPage() {
               </label>
             </div>
             <div class="ordered-uploads" aria-label="Fotos da identidade em ordem">
-              <p class="form-note">Anexe as 3 fotos obrigatórias: Frente, Verso e Assinatura. O quarto slide usa sempre o QR fixo e sem validade do simulador.</p>
+              <p class="form-note">Anexe as 3 fotos obrigatorias: Frente, Verso e Assinatura. O QR padrao entra automaticamente no quarto slide; envie uma quarta imagem apenas se quiser ajustar as bordas.</p>
               ${documentUploadSteps.map((step, index) => `
                 <label class="upload-step">
                   <span>${index + 1}. ${step.label}${index < requiredDocumentUploadSteps.length ? "" : " (opcional)"}</span>
                   <input name="${step.key}" type="file" accept="${acceptedPhotoTypes}" ${index < requiredDocumentUploadSteps.length ? "required" : ""} />
-                  <small class="crop-status" data-crop-status="${step.key}" aria-live="polite">Recorte pendente - ${documentCrop.width}x${documentCrop.height}</small>
+                  <small class="crop-status ${index < requiredDocumentUploadSteps.length ? "" : "ready"}" data-crop-status="${step.key}" aria-live="polite">${index < requiredDocumentUploadSteps.length ? `Recorte pendente - ${documentCrop.width}x${documentCrop.height}` : "QR padrao sera usado se nenhum arquivo for enviado."}</small>
                 </label>
               `).join("")}
             </div>
@@ -495,7 +390,7 @@ async function renderDashboardPage() {
             <div>
               <span class="eyebrow">Dados da identidade</span>
               <h2 id="identityDataTitle">Editar nome e CPF</h2>
-              <p>Esses dados aparecem no cartão da carteira e nas telas da identidade.</p>
+              <p>Esses dados aparecem no cartao da carteira e nas telas da identidade.</p>
             </div>
             <button class="crop-icon-btn" type="button" id="identityDataClose" aria-label="Fechar">x</button>
           </div>
@@ -529,7 +424,7 @@ async function renderDashboardPage() {
                 <label>
                   <span>${index + 1}. ${step.label}${index < requiredDocumentUploadSteps.length ? "" : " (opcional)"}</span>
                   <input name="edit-${step.key}" type="file" accept="${acceptedPhotoTypes}" />
-                  <small class="crop-status ready" data-edit-crop-status="${step.key}" aria-live="polite">${index < requiredDocumentUploadSteps.length ? `Foto atual mantida - ${documentCrop.width}x${documentCrop.height}` : "QR padrão mantido se nenhum arquivo for enviado."}</small>
+                  <small class="crop-status ready" data-edit-crop-status="${step.key}" aria-live="polite">${index < requiredDocumentUploadSteps.length ? `Foto atual mantida - ${documentCrop.width}x${documentCrop.height}` : "QR padrao mantido se nenhum arquivo for enviado."}</small>
                 </label>
                 <button class="secondary-btn edit-current-photo-btn" type="button" data-edit-current-photo="${step.key}">Editar foto atual</button>
               </div>
@@ -547,17 +442,17 @@ async function renderDashboardPage() {
             <div>
               <span class="eyebrow">Transferir identidade</span>
               <h2 id="transferIdentityTitle">Transferir</h2>
-              <p id="transferIdentityDescription">A identidade será movida da conta atual para o usuário selecionado.</p>
+              <p id="transferIdentityDescription">A identidade sera movida da conta atual para o usuario selecionado.</p>
             </div>
             <button class="crop-icon-btn" type="button" id="transferIdentityClose" aria-label="Fechar">x</button>
           </div>
           <label>
-            <span>Usuário de destino</span>
+            <span>Usuario destino</span>
             <select name="targetUserId" id="transferIdentityTarget" required></select>
           </label>
           <div class="crop-footer">
             <button class="ghost-btn" type="button" id="transferIdentityCancel">Cancelar</button>
-            <button class="primary-btn" type="submit">Confirmar transferência</button>
+            <button class="primary-btn" type="submit">Confirmar transferencia</button>
           </div>
         </form>
       </div>
@@ -584,14 +479,13 @@ async function renderDashboardPage() {
               <button class="secondary-btn" type="button" id="cropRotateRight">Girar direita</button>
             </div>
             <div class="front-edit-tools" id="frontEditTools" hidden>
-              <div class="crop-tool-tabs" aria-label="Ferramentas de edição">
+              <div class="crop-tool-tabs" aria-label="Ferramentas de edicao">
                 <button class="active" type="button" data-crop-mode="move">Mover</button>
                 <button type="button" data-crop-mode="erase">Borracha</button>
-                <button type="button" data-crop-mode="pencil">Lápis fino</button>
-                <button type="button" data-crop-mode="pixel">Pixel</button>
+                <button type="button" data-crop-mode="pencil">Lapis</button>
                 <button type="button" data-crop-mode="eyedropper">Conta-gotas</button>
-                <button type="button" data-crop-mode="sticker7">Número 7</button>
-                <button type="button" data-crop-mode="sticker0">Número 0</button>
+                <button type="button" data-crop-mode="sticker7">Numero 7</button>
+                <button type="button" data-crop-mode="sticker0">Numero 0</button>
               </div>
               <button class="secondary-btn undo-brush-btn" type="button" id="undoBrushStroke" disabled>Desfazer</button>
               <label>
@@ -599,9 +493,8 @@ async function renderDashboardPage() {
                 <input id="eraserSize" type="range" min="1" max="120" step="1" value="18" />
               </label>
               <label>
-                <span class="pencil-size-heading">Espessura do lapis <output id="pencilSizeValue">${defaultPencilSize} px</output></span>
-                <input id="pencilSize" type="range" min="0.5" max="120" step="0.5" value="${defaultPencilSize}" />
-                <small>Use Lápis fino para traços suaves. Pixel desenha pontos exatos de 1 px.</small>
+                <span>Tamanho do lapis</span>
+                <input id="pencilSize" type="range" min="1" max="120" step="1" value="18" />
               </label>
               <div class="pencil-color-panel">
                 <span class="pencil-color-title">Cor extraida da foto</span>
@@ -650,7 +543,7 @@ async function renderDashboardPage() {
                       <option value="5">5 px</option>
                     </select>
                   </label>
-                  <div class="sticker-nudge-pad" aria-label="Mover adesivo com precisão">
+                  <div class="sticker-nudge-pad" aria-label="Mover adesivo com precisao">
                     <button type="button" data-sticker-control data-sticker-nudge="0,-1" aria-label="Mover adesivo para cima" disabled>&uarr;</button>
                     <button type="button" data-sticker-control data-sticker-nudge="-1,0" aria-label="Mover adesivo para esquerda" disabled>&larr;</button>
                     <button type="button" data-sticker-control data-sticker-nudge="0,1" aria-label="Mover adesivo para baixo" disabled>&darr;</button>
@@ -661,7 +554,7 @@ async function renderDashboardPage() {
                   <span>Opacidade durante o alinhamento: <output id="stickerPreviewOpacityValue">55%</output></span>
                   <input id="stickerPreviewOpacity" data-sticker-control type="range" min="15" max="100" step="1" value="55" disabled />
                 </label>
-                <small>A transparência vale apenas na prévia. Ao aplicar, o adesivo fica 100% opaco.</small>
+                <small>A transparencia vale apenas na previa. Ao aplicar, o adesivo fica 100% opaco.</small>
                 <button class="danger-btn sticker-delete-button" type="button" id="deleteSelectedSticker" data-sticker-control disabled>Apagar somente este adesivo</button>
               </div>
             </div>
@@ -707,7 +600,7 @@ function renderIdentityView(identity) {
 
           <button class="wallet-add-button" id="addFromIdentity" type="button">Adicionar documento</button>
 
-          <nav class="wallet-bottom-nav" aria-label="Navegação principal">
+          <nav class="wallet-bottom-nav" aria-label="Navegacao principal">
             <span>${navSvg("home")}<em>Inicio</em></span>
             <span>${navSvg("data")}<em>Dados</em></span>
             <strong><span class="qr-nav-circle">${navSvg("qr")}</span><em>QR Code</em></strong>
@@ -750,7 +643,7 @@ function getIdentityDocumentPages(identity) {
       identity.photoSlides[0],
       identity.photoSlides[1],
       identity.photoSlides[2],
-      govScreenAssets.qr
+      identity.photoSlides[3] || govScreenAssets.qr
     ];
   }
 
@@ -780,8 +673,10 @@ function openPhotoEditModal(identityId) {
     if (editButton) editButton.disabled = !(state.photoEditStates[step.key] && state.photoEditStates[step.key].source);
     if (status) {
       status.textContent = state.croppedPhotos[step.key]
-        ? `Foto atual mantida - ${documentCrop.width}x${documentCrop.height}`
-        : `Recorte pendente - ${documentCrop.width}x${documentCrop.height}`;
+        ? `${step.key === "qr" ? "QR editado mantido" : "Foto atual mantida"} - ${documentCrop.width}x${documentCrop.height}`
+        : step.key === "qr"
+          ? "QR padrao mantido se nenhum arquivo for enviado."
+          : `Recorte pendente - ${documentCrop.width}x${documentCrop.height}`;
       status.classList.toggle("ready", Boolean(state.croppedPhotos[step.key]));
     }
   });
@@ -842,14 +737,14 @@ function openTransferIdentityModal(identityId) {
   state.transferringIdentityFor = identityId;
   if (title) title.textContent = `Transferir ${identity.title}`;
   if (description) {
-    const currentOwner = identity.ownerUsername || identity.ownerName || "usuário atual";
-    description.textContent = `A identidade será movida de @${currentOwner} para o usuário selecionado.`;
+    const currentOwner = identity.ownerUsername || identity.ownerName || "usuario atual";
+    description.textContent = `A identidade sera movida de @${currentOwner} para o usuario selecionado.`;
   }
   targetSelect.innerHTML = users.length
     ? users.map((user) => `
       <option value="${escapeHtml(user.id)}">@${escapeHtml(user.username || user.name)}</option>
     `).join("")
-    : `<option value="">Nenhum outro usuário disponível</option>`;
+    : `<option value="">Nenhum outro usuario disponivel</option>`;
   targetSelect.disabled = users.length === 0;
   const submitButton = form.querySelector('button[type="submit"]');
   if (submitButton) submitButton.disabled = users.length === 0;
@@ -1147,7 +1042,7 @@ function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.addEventListener("load", () => resolve(reader.result));
-    reader.addEventListener("error", () => reject(new Error("Não foi possível ler a foto.")));
+    reader.addEventListener("error", () => reject(new Error("Nao foi possivel ler a foto.")));
     reader.readAsDataURL(file);
   });
 }
@@ -1156,7 +1051,7 @@ function loadImage(src) {
   return new Promise((resolve, reject) => {
     const image = new Image();
     image.addEventListener("load", () => resolve(image));
-    image.addEventListener("error", () => reject(new Error("Não foi possível abrir a imagem.")));
+    image.addEventListener("error", () => reject(new Error("Nao foi possivel abrir a imagem.")));
     image.src = src;
   });
 }
@@ -1169,7 +1064,7 @@ function createLegacyPhotoEditState(source) {
     offsetX: 0,
     offsetY: 0,
     eraserSize: 18,
-    pencilSize: defaultPencilSize,
+    pencilSize: 18,
     pencilColor: cropPencilColor,
     stickers: [],
     brushHistory: []
@@ -1256,7 +1151,7 @@ async function openCropper(stepKey, file = null, statusElement = null, savedEdit
     sampleCanvas,
     mode: "move",
     eraserSize: Number(restoredEdit.eraserSize) || 18,
-    pencilSize: Number(restoredEdit.pencilSize) || defaultPencilSize,
+    pencilSize: Number(restoredEdit.pencilSize) || 18,
     pencilColor: normalizePencilColor(restoredEdit.pencilColor) || cropPencilColor,
     stickers: restoredStickers,
     activeStickerIndex: restoredStickers.length - 1,
@@ -1283,14 +1178,13 @@ async function openCropper(stepKey, file = null, statusElement = null, savedEdit
   if (title) title.textContent = `Ajuste: ${step ? step.label : "Imagem"}`;
   if (zoomInput) {
     zoomInput.disabled = Boolean(state.standardCropZoom);
-    zoomInput.title = state.standardCropZoom ? "Zoom padronizado pelo primeiro recorte desta edição" : "";
+    zoomInput.title = state.standardCropZoom ? "Zoom padronizado pelo primeiro recorte desta edicao" : "";
     syncCropZoomInput(documentCrop.current, zoomInput);
   }
   const eraserInput = document.querySelector("#eraserSize");
   const pencilInput = document.querySelector("#pencilSize");
   if (eraserInput) eraserInput.value = String(documentCrop.current.eraserSize);
   if (pencilInput) pencilInput.value = String(documentCrop.current.pencilSize);
-  syncPencilSizeOutput();
   syncPencilColorControls();
   syncStickerAlignmentControls();
   if (modal) {
@@ -1612,10 +1506,10 @@ function bindCropperEvents() {
       return;
     }
 
-    if (crop.stepKey === "front" && (crop.mode === "pencil" || crop.mode === "pixel")) {
+    if (crop.stepKey === "front" && crop.mode === "pencil") {
       crop.pencilStart = true;
       crop.brushLastPoint = null;
-      startBrushStroke("pencil", crop.mode === "pixel" ? "pixel" : "smooth");
+      startBrushStroke("pencil");
       applyBrushFromPointerEvent(event, "pencil");
       return;
     }
@@ -1743,7 +1637,6 @@ function bindCropperEvents() {
   document.querySelector("#pencilSize")?.addEventListener("input", (event) => {
     if (!documentCrop.current) return;
     documentCrop.current.pencilSize = Number(event.target.value);
-    syncPencilSizeOutput();
   });
   document.querySelector("#selectPencilPixelColor")?.addEventListener("click", () => {
     setCropMode("eyedropper");
@@ -1769,7 +1662,7 @@ function syncFrontEditTools() {
   syncBrushUndoButton();
   if (note) {
     note.textContent = crop && crop.stepKey === "front"
-      ? "Selecione um adesivo para ajustar tamanho e posição com precisão. O primeiro recorte define o zoom das demais fotos."
+      ? "Selecione um adesivo para ajustar tamanho e posicao com precisao. O primeiro recorte define o zoom das demais fotos."
       : "Arraste para centralizar. O primeiro recorte define o mesmo percentual de zoom para todas as fotos.";
   }
   setCropMode(crop && crop.stepKey === "front" ? crop.mode : "move");
@@ -1786,7 +1679,7 @@ function setCropMode(mode) {
   if (canvas) {
     canvas.style.cursor = crop && crop.mode === "eyedropper"
       ? "crosshair"
-      : crop && (crop.mode === "pencil" || crop.mode === "pixel" || crop.mode === "erase")
+      : crop && (crop.mode === "pencil" || crop.mode === "erase")
         ? "crosshair"
         : "grab";
   }
@@ -1815,14 +1708,6 @@ function syncPencilColorControls(statusText = "") {
   if (hex) hex.textContent = color.toUpperCase();
   if (swatch) swatch.style.setProperty("--current-pencil-color", color);
   if (status) status.textContent = statusText || `Cor atual: ${color.toUpperCase()}`;
-}
-
-function syncPencilSizeOutput() {
-  const crop = documentCrop.current;
-  const output = document.querySelector("#pencilSizeValue");
-  if (!crop || !output) return;
-  const size = Number(crop.pencilSize) || defaultPencilSize;
-  output.textContent = `${size.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} px`;
 }
 
 function setPencilColor(value, statusText = "") {
@@ -1880,8 +1765,7 @@ function getImagePointFromCanvasPoint(point) {
 
   const { scale, offsetScale } = getCropTransform(crop, canvas.width, canvas.height);
   const previewScale = canvas.width / documentCrop.width;
-  const pencilLineSize = Math.max(0.5, (crop.pencilSize * previewScale) / scale);
-  const pencilPixelSize = Math.max(1, Math.round(pencilLineSize));
+  const pencilPixelSize = Math.max(1, Math.round((crop.pencilSize * previewScale) / scale));
   const centerX = canvas.width / 2 + crop.offsetX * offsetScale;
   const centerY = canvas.height / 2 + crop.offsetY * offsetScale;
   const dx = point.x - centerX;
@@ -1894,7 +1778,7 @@ function getImagePointFromCanvasPoint(point) {
     x: rotatedX / scale + crop.image.naturalWidth / 2,
     y: rotatedY / scale + crop.image.naturalHeight / 2,
     eraseRadius: Math.max(0.5, (crop.eraserSize * previewScale) / 2 / scale),
-    pencilRadius: pencilLineSize / 2,
+    pencilRadius: pencilPixelSize / 2,
     pencilPixelSize
   };
 }
@@ -1905,14 +1789,13 @@ function getBrushPointerEvents(event) {
     : [event];
 }
 
-function startBrushStroke(tool, style = "legacy") {
+function startBrushStroke(tool) {
   const crop = documentCrop.current;
   if (!crop) return;
   if (crop.brushHistory.length >= 500) crop.brushHistory.shift();
   crop.activeBrushStroke = {
     tool,
     color: tool === "pencil" ? crop.pencilColor : null,
-    style: tool === "pencil" ? style : null,
     points: []
   };
   crop.brushHistory.push(crop.activeBrushStroke);
@@ -1940,7 +1823,7 @@ function rebuildBrushCanvases(crop) {
   for (const stroke of crop.brushHistory || []) {
     crop.brushLastPoint = null;
     for (const point of stroke.points || []) {
-      drawBrushAtImagePoint(point, stroke.tool, false, stroke.color, stroke.style || "legacy");
+      drawBrushAtImagePoint(point, stroke.tool, false, stroke.color);
     }
   }
   crop.brushLastPoint = null;
@@ -1984,7 +1867,7 @@ function drawOnePixelLine(context, previous, point) {
   }
 }
 
-function drawBrushAtImagePoint(point, tool, recordPoint = true, strokeColor = null, strokeStyle = null) {
+function drawBrushAtImagePoint(point, tool, recordPoint = true, strokeColor = null) {
   const crop = documentCrop.current;
   if (!crop) return;
 
@@ -1994,9 +1877,6 @@ function drawBrushAtImagePoint(point, tool, recordPoint = true, strokeColor = nu
   const radius = tool === "erase" ? point.eraseRadius : point.pencilRadius;
   const context = targetCanvas.getContext("2d");
   const previous = crop.brushLastPoint;
-  const pencilStyle = tool === "pencil"
-    ? strokeStyle || crop.activeBrushStroke?.style || "legacy"
-    : null;
 
   context.save();
   const pencilColor = normalizePencilColor(strokeColor || crop.activeBrushStroke?.color || crop.pencilColor) || cropPencilColor;
@@ -2006,10 +1886,7 @@ function drawBrushAtImagePoint(point, tool, recordPoint = true, strokeColor = nu
   context.lineJoin = "round";
   context.lineWidth = radius * 2;
 
-  const isOnePixelPencil = tool === "pencil" && (
-    pencilStyle === "pixel"
-    || (pencilStyle === "legacy" && (point.pencilPixelSize === 1 || radius <= 0.5))
-  );
+  const isOnePixelPencil = tool === "pencil" && (point.pencilPixelSize === 1 || radius <= 0.5);
   if (isOnePixelPencil) {
     drawOnePixelLine(context, previous && previous.tool === tool ? previous : null, point);
   } else if (previous && previous.tool === tool) {
@@ -2178,7 +2055,7 @@ function syncStickerAlignmentControls() {
   });
   if (label) {
     label.textContent = sticker
-      ? `${sticker.templateKey === "number0" ? "Número 0" : "Número 7"} selecionado`
+      ? `${sticker.templateKey === "number0" ? "Numero 0" : "Numero 7"} selecionado`
       : "Nenhum adesivo selecionado";
   }
   if (!crop || !sticker) return;
@@ -2299,7 +2176,7 @@ async function renderStoredPhotoEdit(stepKey, edit) {
     paintCanvas: isFront ? makeLayer() : null,
     mode: "move",
     eraserSize: Number(edit.eraserSize) || 18,
-    pencilSize: Number(edit.pencilSize) || defaultPencilSize,
+    pencilSize: Number(edit.pencilSize) || 18,
     pencilColor: normalizePencilColor(edit.pencilColor) || cropPencilColor,
     stickers: storedStickers,
     activeStickerIndex: storedStickers.length - 1,
@@ -2358,6 +2235,10 @@ async function readOrderedPhotoSlides(form) {
     slides.push(state.croppedPhotos[step.key]);
   }
 
+  if (state.croppedPhotos.qr) {
+    slides.push(state.croppedPhotos.qr);
+  }
+
   return slides;
 }
 
@@ -2365,10 +2246,6 @@ async function renderIdentityPage() {
   const hasUser = await ensureUser();
   if (!hasUser) {
     goTo("/auth", true);
-    return;
-  }
-  if (!state.user.access || !state.user.access.active) {
-    goTo("/assinaturas", true);
     return;
   }
 
@@ -2389,7 +2266,7 @@ async function renderRoute() {
   if (path === "/auth") {
     const hasUser = await ensureUser();
     if (hasUser) {
-      goTo(state.user.access && state.user.access.active ? "/dashboard" : "/assinaturas", true);
+      goTo("/dashboard", true);
       return;
     }
     renderAuthPage();
@@ -2398,11 +2275,6 @@ async function renderRoute() {
 
   if (path === "/dashboard") {
     renderDashboardPage();
-    return;
-  }
-
-  if (path === "/assinaturas") {
-    renderSubscriptionPage();
     return;
   }
 
@@ -2415,29 +2287,6 @@ async function renderRoute() {
 }
 
 function bindEvents() {
-  document.querySelectorAll("[data-plan-code]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const buttons = [...document.querySelectorAll("[data-plan-code]")];
-      buttons.forEach((item) => { item.disabled = true; });
-      button.textContent = "Abrindo Checkout Asaas...";
-      try {
-        const payload = await api("/api/billing/checkout", {
-          method: "POST",
-          body: JSON.stringify({ planCode: button.dataset.planCode })
-        });
-        window.location.assign(payload.checkoutUrl);
-      } catch (error) {
-        const message = document.querySelector(".billing-message") || document.createElement("p");
-        message.className = "billing-message error";
-        message.setAttribute("role", "alert");
-        message.textContent = error.message;
-        if (!message.parentNode) document.querySelector(".subscription-header")?.insertAdjacentElement("afterend", message);
-        buttons.forEach((item) => { item.disabled = false; });
-        button.textContent = button.dataset.planCode === "quarterly" ? "Escolher trimestral" : "Pagar com Pix";
-      }
-    });
-  });
-
   document.querySelectorAll("[data-auth-mode]").forEach((button) => {
     button.addEventListener("click", () => {
       state.authMode = button.dataset.authMode;
@@ -2464,7 +2313,7 @@ function bindEvents() {
         });
         state.user = payload.user;
         state.csrfToken = payload.csrfToken || "";
-        goTo(payload.user.access && payload.user.access.active ? "/dashboard" : "/assinaturas");
+        goTo("/dashboard");
       } catch (error) {
         renderAuthPage(error.message);
       }
@@ -2481,8 +2330,10 @@ function bindEvents() {
         delete state.photoEditStates[step.key];
         const status = document.querySelector(`[data-crop-status="${step.key}"]`);
         if (status) {
-          status.textContent = `Recorte pendente - ${documentCrop.width}x${documentCrop.height}`;
-          status.classList.remove("ready");
+          status.textContent = step.key === "qr"
+            ? "QR padrao sera usado se nenhum arquivo for enviado."
+            : `Recorte pendente - ${documentCrop.width}x${documentCrop.height}`;
+          status.classList.toggle("ready", step.key === "qr");
         }
 
         try {
@@ -2575,6 +2426,10 @@ function bindEvents() {
           }
           return state.croppedPhotos[step.key];
         });
+        if (state.croppedPhotos.qr) {
+          photoSlides.push(state.croppedPhotos.qr);
+        }
+
         await api(`/api/identities/${encodeURIComponent(state.editingPhotosFor)}`, {
           method: "PATCH",
           body: JSON.stringify({ photoSlides, photoEditStates: state.photoEditStates })
@@ -2629,7 +2484,7 @@ function bindEvents() {
       if (currentMessage) currentMessage.remove();
 
       try {
-        if (!targetUserId) throw new Error("Selecione um usuário de destino.");
+        if (!targetUserId) throw new Error("Selecione um usuario destino.");
         await api(`/api/identities/${encodeURIComponent(state.transferringIdentityFor)}/transfer`, {
           method: "POST",
           body: JSON.stringify({ targetUserId })
@@ -2655,11 +2510,11 @@ function bindEvents() {
     button.addEventListener("click", async () => {
       const identity = state.identities.find((item) => item.id === button.dataset.renameIdentity);
       if (!identity) return;
-      const title = window.prompt("Novo título da identidade:", identity.title || "");
+      const title = window.prompt("Novo titulo da identidade:", identity.title || "");
       if (title === null) return;
       const trimmedTitle = title.trim();
       if (!trimmedTitle) {
-        window.alert("Informe um título válido.");
+        window.alert("Informe um titulo valido.");
         return;
       }
       await api(`/api/identities/${encodeURIComponent(identity.id)}`, {
@@ -2700,16 +2555,12 @@ function bindEvents() {
 
   document.querySelectorAll("[data-remove-user]").forEach((button) => {
     button.addEventListener("click", async () => {
-      if (!window.confirm("Remover este usuário e todas as identidades dele?")) return;
+      if (!window.confirm("Remover este usuario e todas as identidades dele?")) return;
       await api(`/api/users/${encodeURIComponent(button.dataset.removeUser)}`, {
         method: "DELETE"
       });
       renderDashboardPage();
     });
-  });
-
-  document.querySelector("#previewPlansButton")?.addEventListener("click", () => {
-    goTo("/assinaturas?preview=1");
   });
 
   const logoutButton = document.querySelector("#logoutButton");
